@@ -7,6 +7,9 @@ bazel_dep(name = "rules_cuda", version = "0.2.4")
 # Abseil
 bazel_dep(name = "abseil-cpp", version = "20250512.0")
 
+# GoogleTest
+bazel_dep(name = "googletest", version = "1.17.0")
+
 # Hedron's Compile Commands Extractor for Bazel
 # https://github.com/hedronvision/bazel-compile-commands-extractor
 bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
