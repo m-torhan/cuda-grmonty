@@ -8,8 +8,10 @@
 #include "absl/flags/parse.h"
 #include <iostream>
 
+#include "harm_data.hpp"
+
 // Define cli args
-ABSL_FLAG(int, photon_n, 5000000, "estimate of photon number");
+ABSL_FLAG(int, photon_n, 5000000, "Estimate of photon number");
 ABSL_FLAG(float, mass_unit, 4e19, "Mass unit");
 ABSL_FLAG(std::string, harm_dump_path, "", "HARM dump file path");
 
@@ -23,6 +25,9 @@ int main(int argc, char *argv[]) {
     std::cout << "photon_n: " << photon_n << std::endl;
     std::cout << "mass_unit: " << mass_unit << std::endl;
     std::cout << "harm_dump_path: " << harm_dump_path << std::endl;
+
+    harm::HARMData harm_data;
+    harm_data.read_file(harm_dump_path);
 
     return 0;
 }
