@@ -14,6 +14,11 @@ package(
 )
 
 cc_library(
+    name = "ndarray",
+    hdrs = ["ndarray.hpp"],
+)
+
+cc_library(
     name = "consts",
     hdrs = ["consts.hpp"]
 )
