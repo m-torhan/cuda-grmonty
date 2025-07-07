@@ -23,4 +23,4 @@ constexpr double weight_min = 1.0e31;
 constexpr double electron_mass = 9.1093826e-28;
 constexpr double photon_mass = 1.67262171e-24;
 
-} /* namespace consts */;
+}; /* namespace consts */

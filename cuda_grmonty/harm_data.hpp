@@ -5,10 +5,9 @@
  */
 #pragma once
 
-#include "ndarray.hpp"
-
 #include <string>
-#include <vector>
+
+#include "cuda_grmonty/ndarray.hpp"
 
 namespace harm {
 

@@ -10,6 +10,9 @@ repos:
       - id: clang-format
         args:
           - -i
+      - id: cpplint
+        args:
+          - --config=cpplint.cfg
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
