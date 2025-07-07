@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <iostream>
+#include <string>
+
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include <iostream>
 
-#include "harm_data.hpp"
+#include "cuda_grmonty/harm_data.hpp"
 
 // Define cli args
 ABSL_FLAG(int, photon_n, 5000000, "Estimate of photon number");

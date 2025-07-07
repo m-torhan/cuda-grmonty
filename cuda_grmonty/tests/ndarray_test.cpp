@@ -6,13 +6,16 @@
 
 #include "cuda_grmonty/ndarray.hpp"
 
-#include <algorithm>
 #include <gtest/gtest.h>
+
+#include <algorithm>
 #include <initializer_list>
-#include <istream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 typedef std::vector<unsigned int> Shape; /* initializer_list cannot be param of parametrized test */
 typedef std::vector<int> Index;
@@ -123,7 +126,7 @@ TEST_P(NDArrayShapeFixture, Shape) {
     std::vector<unsigned int> a_shape = a.shape();
 
     ASSERT_EQ(shape.size(), a_shape.size());
-    for (int i = 0; i < (int)shape_vec.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(shape_vec.size()); ++i) {
         ASSERT_EQ(shape_vec[i], a_shape[i]);
     }
 }

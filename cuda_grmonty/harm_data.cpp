@@ -4,18 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "harm_data.hpp"
-
-#include "consts.hpp"
-
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
 #include <sstream>
+#include <string>
 
-using namespace harm;
+#include "cuda_grmonty/consts.hpp"
+#include "cuda_grmonty/harm_data.hpp"
+
+namespace harm {
 
 void HARMData::read_file(std::string filepath) {
     std::cout << "Reading file: " << filepath << std::endl;
@@ -137,14 +137,16 @@ void HARMData::read_file(std::string filepath) {
         iss >> g_det;
 
         data.bias_norm +=
-            d_v * g_det * std::pow((double)data.u[{x_1, x_2}] / (double)data.p[{x_1, x_2}] * thetae_unit, 2.);
+            d_v * g_det *
+            std::pow(static_cast<double>(data.u[{x_1, x_2}]) / static_cast<double>(data.p[{x_1, x_2}]) * thetae_unit,
+                     2.);
         v += d_v * g_det;
 
         if (x_1 <= 20) {
-            d_mact += g_det * (double)data.p[{x_1, x_2}] * u_con[1];
+            d_mact += g_det * static_cast<double>(data.p[{x_1, x_2}]) * u_con[1];
         }
         if (x_1 >= 20 && x_1 < 40) {
-            l_adv += g_det * (double)data.u[{x_1, x_2}] * u_con[1] * u_con[0];
+            l_adv += g_det * static_cast<double>(data.u[{x_1, x_2}]) * u_con[1] * u_con[0];
         }
     }
 
@@ -156,3 +158,5 @@ void HARMData::read_file(std::string filepath) {
 
     harm_file.close();
 }
+
+}; /* namespace harm */
