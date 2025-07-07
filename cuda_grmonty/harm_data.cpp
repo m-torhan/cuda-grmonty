@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "harm_data.hpp"
+
+#include "consts.hpp"
+
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
 #include <sstream>
-
-#include "consts.hpp"
-
-#include "harm_data.hpp"
 
 using namespace harm;
 
@@ -96,14 +96,14 @@ void HARMData::read_file(std::string filepath) {
     double b_cov[4]; /* convariant 4-magnetic field components */
 
     /* prepare space for data */
-    data.p.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.u.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.u_1.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.u_2.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.u_3.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.b_1.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.b_2.resize(header.n[0], std::vector<double>(header.n[1]));
-    data.b_3.resize(header.n[0], std::vector<double>(header.n[1]));
+    data.p = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.u = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.u_1 = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.u_2 = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.u_3 = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.b_1 = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.b_2 = ndarray::NDArray<double>({header.n[0], header.n[1]});
+    data.b_3 = ndarray::NDArray<double>({header.n[0], header.n[1]});
 
     /* read data */
     int n_cells = header.n[0] * header.n[1];
@@ -119,14 +119,14 @@ void HARMData::read_file(std::string filepath) {
         iss >> x[2];
         iss >> r;
         iss >> h;
-        iss >> data.p[x_1][x_2];
-        iss >> data.u[x_1][x_2];
-        iss >> data.u_1[x_1][x_2];
-        iss >> data.u_2[x_1][x_2];
-        iss >> data.u_3[x_1][x_2];
-        iss >> data.b_1[x_1][x_2];
-        iss >> data.b_2[x_1][x_2];
-        iss >> data.b_3[x_1][x_2];
+        iss >> data.p[{x_1, x_2}];
+        iss >> data.u[{x_1, x_2}];
+        iss >> data.u_1[{x_1, x_2}];
+        iss >> data.u_2[{x_1, x_2}];
+        iss >> data.u_3[{x_1, x_2}];
+        iss >> data.b_1[{x_1, x_2}];
+        iss >> data.b_2[{x_1, x_2}];
+        iss >> data.b_3[{x_1, x_2}];
         iss >> div_b;
         iss >> u_con[0] >> u_con[1] >> u_con[2] >> u_con[3];
         iss >> u_cov[0] >> u_cov[1] >> u_cov[2] >> u_cov[3];
@@ -136,14 +136,15 @@ void HARMData::read_file(std::string filepath) {
         iss >> vmin[1] >> vmax[1];
         iss >> g_det;
 
-        data.bias_norm += d_v * g_det * std::pow(data.u[x_1][x_2] / data.p[x_1][x_2] * thetae_unit, 2.);
+        data.bias_norm +=
+            d_v * g_det * std::pow((double)data.u[{x_1, x_2}] / (double)data.p[{x_1, x_2}] * thetae_unit, 2.);
         v += d_v * g_det;
 
         if (x_1 <= 20) {
-            d_mact += g_det * data.p[x_1][x_2] * u_con[1];
+            d_mact += g_det * (double)data.p[{x_1, x_2}] * u_con[1];
         }
         if (x_1 >= 20 && x_1 < 40) {
-            l_adv += g_det * data.u[x_1][x_2] * u_con[1] * u_con[0];
+            l_adv += g_det * (double)data.u[{x_1, x_2}] * u_con[1] * u_con[0];
         }
     }
 
