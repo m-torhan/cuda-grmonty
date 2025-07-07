@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include "ndarray.hpp"
+
 #include <string>
 #include <vector>
 
@@ -12,7 +14,7 @@ namespace harm {
 
 struct Header {
     double t;          /* simulation time */
-    int n[2];          /* number of grid points in x1 and x2 directions  */
+    unsigned int n[2]; /* number of grid points in x1 and x2 directions  */
     double x_start[4]; /* start coordinates of the grid */
     double x_stop[4];  /* stop coordinates of the grid */
     double dx[4];      /* grid spacing */
@@ -38,14 +40,14 @@ struct Header {
 };
 
 struct Data {
-    std::vector<std::vector<double>> p;   /* rest-mass density */
-    std::vector<std::vector<double>> u;   /* internal eneergy density */
-    std::vector<std::vector<double>> u_1; /* covariant velocity components */
-    std::vector<std::vector<double>> u_2;
-    std::vector<std::vector<double>> u_3;
-    std::vector<std::vector<double>> b_1; /* contravariant magnetic field components */
-    std::vector<std::vector<double>> b_2;
-    std::vector<std::vector<double>> b_3;
+    ndarray::NDArray<double> p;   /* rest-mass density */
+    ndarray::NDArray<double> u;   /* internal eneergy density */
+    ndarray::NDArray<double> u_1; /* covariant velocity components */
+    ndarray::NDArray<double> u_2;
+    ndarray::NDArray<double> u_3;
+    ndarray::NDArray<double> b_1; /* contravariant magnetic field components */
+    ndarray::NDArray<double> b_2;
+    ndarray::NDArray<double> b_3;
     double bias_norm;
 };
 

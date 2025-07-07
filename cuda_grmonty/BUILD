@@ -28,7 +28,8 @@ cc_library(
     srcs = ["harm_data.cpp"],
     hdrs = ["harm_data.hpp"],
     deps = [
-        ":consts"
+        ":consts",
+        ":ndarray",
     ]
 )
 

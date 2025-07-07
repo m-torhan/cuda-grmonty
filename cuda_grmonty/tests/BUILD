@@ -17,5 +17,6 @@ cc_test(
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "//cuda_grmonty:harm_data",
+        "//cuda_grmonty:ndarray",
     ],
 )
