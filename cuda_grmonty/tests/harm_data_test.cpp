@@ -5,6 +5,8 @@
  */
 
 #include "cuda_grmonty/harm_data.hpp"
+#include "cuda_grmonty/ndarray.hpp"
+
 #include <format>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -37,16 +39,58 @@ const harm::Header sample_header{
     .r_0 = 28.0,
 };
 
+/* clang-format off */
 const harm::Data sample_data{
-    .p = {{111.0, 112.0, 113.0}, {121.0, 122.0, 123.0}},
-    .u = {{211.0, 212.0, 213.0}, {221.0, 222.0, 223.0}},
-    .u_1 = {{311.0, 312.0, 313.0}, {321.0, 322.0, 323.0}},
-    .u_2 = {{411.0, 412.0, 413.0}, {421.0, 422.0, 423.0}},
-    .u_3 = {{511.0, 512.0, 513.0}, {521.0, 522.0, 523.0}},
-    .b_1 = {{611.0, 612.0, 613.0}, {621.0, 622.0, 623.0}},
-    .b_2 = {{711.0, 712.0, 713.0}, {721.0, 722.0, 723.0}},
-    .b_3 = {{811.0, 812.0, 813.0}, {821.0, 822.0, 823.0}},
+    .p = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            111.0, 112.0, 113.0,
+            121.0, 122.0, 123.0
+        }),
+    .u = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            211.0, 212.0, 213.0,
+            221.0, 222.0, 223.0
+        }),
+    .u_1 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            311.0, 312.0, 313.0,
+            321.0, 322.0, 323.0
+        }),
+    .u_2 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            411.0, 412.0, 413.0,
+            421.0, 422.0, 423.0
+        }),
+    .u_3 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            511.0, 512.0, 513.0,
+            521.0, 522.0, 523.0
+        }),
+    .b_1 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            611.0, 612.0, 613.0,
+            621.0, 622.0, 623.0
+        }),
+    .b_2 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            711.0, 712.0, 713.0,
+            721.0, 722.0, 723.0
+        }),
+    .b_3 = ndarray::NDArray<double>(
+        {2, 3},
+        {
+            811.0, 812.0, 813.0,
+            821.0, 822.0, 823.0
+        }),
 };
+/* clang-format on */
 
 /**
  * Writes sample HARM header to file
@@ -132,41 +176,46 @@ TEST(HARMData, ReadFileData) {
     /* read file */
     harm::HARMData harm_data;
 
-    system((std::string("cat ") + filepath).c_str());
-
     harm_data.read_file(filepath);
 
     /* check values */
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->p.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_1.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_2.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_3.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_1.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_2.size());
-    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_3.size());
+    ASSERT_EQ(2, harm_data.get_data()->p.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->u.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->u_1.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->u_2.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->u_3.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->b_1.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->b_2.ndim());
+    ASSERT_EQ(2, harm_data.get_data()->b_3.ndim());
 
-    for (int i = 0; i < sample_header.n[0]; ++i) {
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->p[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_1[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_2[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_3[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_1[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_2[i].size());
-        ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_3[i].size());
-    }
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->p.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_1.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_2.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->u_3.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_1.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_2.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_data.get_data()->b_3.shape()[0]);
 
-    for (int i = 0; i < sample_header.n[0]; ++i) {
-        for (int j = 0; j < sample_header.n[1]; ++j) {
-            ASSERT_DOUBLE_EQ(sample_data.p[i][j], harm_data.get_data()->p[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.u[i][j], harm_data.get_data()->u[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.u_1[i][j], harm_data.get_data()->u_1[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.u_2[i][j], harm_data.get_data()->u_2[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.u_2[i][j], harm_data.get_data()->u_2[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.b_1[i][j], harm_data.get_data()->b_1[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.b_2[i][j], harm_data.get_data()->b_2[i][j]);
-            ASSERT_DOUBLE_EQ(sample_data.b_2[i][j], harm_data.get_data()->b_2[i][j]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->p.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_1.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_2.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->u_3.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_1.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_2.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_3.shape()[1]);
+
+    for (int i = 0; i < (int)sample_header.n[0]; ++i) {
+        for (int j = 0; j < (int)sample_header.n[1]; ++j) {
+            ASSERT_DOUBLE_EQ(((double)sample_data.p[{i, j}]), ((double)harm_data.get_data()->p[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.u[{i, j}]), ((double)harm_data.get_data()->u[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.u_1[{i, j}]), ((double)harm_data.get_data()->u_1[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.u_2[{i, j}]), ((double)harm_data.get_data()->u_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.u_2[{i, j}]), ((double)harm_data.get_data()->u_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.b_1[{i, j}]), ((double)harm_data.get_data()->b_1[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.b_2[{i, j}]), ((double)harm_data.get_data()->b_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(((double)sample_data.b_2[{i, j}]), ((double)harm_data.get_data()->b_2[{i, j}]));
         }
     }
 }
@@ -189,17 +238,17 @@ static void write_sample_harm_header(std::ofstream &file) {
 }
 
 static void write_sample_harm_data(std::ofstream &file) {
-    for (int j = 0; j < sample_header.n[1]; ++j) {
-        for (int i = 0; i < sample_header.n[0]; ++i) {
+    for (int j = 0; j < (int)sample_header.n[1]; ++j) {
+        for (int i = 0; i < (int)sample_header.n[0]; ++i) {
             file << "0 0 0 0 "; /* x[1], x[2], r, h */
-            file << std::format("{} ", sample_data.p[i][j]);
-            file << std::format("{} ", sample_data.u[i][j]);
-            file << std::format("{} ", sample_data.u_1[i][j]);
-            file << std::format("{} ", sample_data.u_2[i][j]);
-            file << std::format("{} ", sample_data.u_3[i][j]);
-            file << std::format("{} ", sample_data.b_1[i][j]);
-            file << std::format("{} ", sample_data.b_2[i][j]);
-            file << std::format("{} ", sample_data.b_3[i][j]);
+            file << std::format("{} ", (double)sample_data.p[{i, j}]);
+            file << std::format("{} ", (double)sample_data.u[{i, j}]);
+            file << std::format("{} ", (double)sample_data.u_1[{i, j}]);
+            file << std::format("{} ", (double)sample_data.u_2[{i, j}]);
+            file << std::format("{} ", (double)sample_data.u_3[{i, j}]);
+            file << std::format("{} ", (double)sample_data.b_1[{i, j}]);
+            file << std::format("{} ", (double)sample_data.b_2[{i, j}]);
+            file << std::format("{} ", (double)sample_data.b_3[{i, j}]);
             file << "0 ";               /* div_b */
             file << "0 0 0 0 0 0 0 0 "; /* u_con, u_cov */
             file << "0 0 0 0 0 0 0 0 "; /* b_con, b_cov */
