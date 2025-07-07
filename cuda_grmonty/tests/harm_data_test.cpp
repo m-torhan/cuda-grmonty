@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "cuda_grmonty/harm_data.hpp"
-#include "cuda_grmonty/ndarray.hpp"
+#include <gtest/gtest.h>
 
 #include <format>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <string>
+
+#include "cuda_grmonty/harm_data.hpp"
+#include "cuda_grmonty/ndarray.hpp"
 
 const harm::Header sample_header{
     .t = 1.0,
@@ -206,16 +207,24 @@ TEST(HARMData, ReadFileData) {
     ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_2.shape()[1]);
     ASSERT_EQ(sample_header.n[1], harm_data.get_data()->b_3.shape()[1]);
 
-    for (int i = 0; i < (int)sample_header.n[0]; ++i) {
-        for (int j = 0; j < (int)sample_header.n[1]; ++j) {
-            ASSERT_DOUBLE_EQ(((double)sample_data.p[{i, j}]), ((double)harm_data.get_data()->p[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.u[{i, j}]), ((double)harm_data.get_data()->u[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.u_1[{i, j}]), ((double)harm_data.get_data()->u_1[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.u_2[{i, j}]), ((double)harm_data.get_data()->u_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.u_2[{i, j}]), ((double)harm_data.get_data()->u_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.b_1[{i, j}]), ((double)harm_data.get_data()->b_1[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.b_2[{i, j}]), ((double)harm_data.get_data()->b_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(((double)sample_data.b_2[{i, j}]), ((double)harm_data.get_data()->b_2[{i, j}]));
+    for (int i = 0; i < static_cast<int>(sample_header.n[0]); ++i) {
+        for (int j = 0; j < static_cast<int>(sample_header.n[1]); ++j) {
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.p[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->p[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->u[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_1[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->u_1[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_2[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->u_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_2[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->u_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_1[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->b_1[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_2[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->b_2[{i, j}]));
+            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_2[{i, j}]),
+                             static_cast<double>(harm_data.get_data()->b_2[{i, j}]));
         }
     }
 }
@@ -238,17 +247,17 @@ static void write_sample_harm_header(std::ofstream &file) {
 }
 
 static void write_sample_harm_data(std::ofstream &file) {
-    for (int j = 0; j < (int)sample_header.n[1]; ++j) {
-        for (int i = 0; i < (int)sample_header.n[0]; ++i) {
+    for (int j = 0; j < static_cast<int>(sample_header.n[1]); ++j) {
+        for (int i = 0; i < static_cast<int>(sample_header.n[0]); ++i) {
             file << "0 0 0 0 "; /* x[1], x[2], r, h */
-            file << std::format("{} ", (double)sample_data.p[{i, j}]);
-            file << std::format("{} ", (double)sample_data.u[{i, j}]);
-            file << std::format("{} ", (double)sample_data.u_1[{i, j}]);
-            file << std::format("{} ", (double)sample_data.u_2[{i, j}]);
-            file << std::format("{} ", (double)sample_data.u_3[{i, j}]);
-            file << std::format("{} ", (double)sample_data.b_1[{i, j}]);
-            file << std::format("{} ", (double)sample_data.b_2[{i, j}]);
-            file << std::format("{} ", (double)sample_data.b_3[{i, j}]);
+            file << std::format("{} ", static_cast<double>(sample_data.p[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.u[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.u_1[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.u_2[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.u_3[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.b_1[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.b_2[{i, j}]));
+            file << std::format("{} ", static_cast<double>(sample_data.b_3[{i, j}]));
             file << "0 ";               /* div_b */
             file << "0 0 0 0 0 0 0 0 "; /* u_con, u_cov */
             file << "0 0 0 0 0 0 0 0 "; /* b_con, b_cov */

@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2025 Maciej Torhan <https://github.com/m-torhan>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -15,13 +21,13 @@ namespace ndarray {
 template <typename T>
 class NDArray {
 public:
-    NDArray() : data_(nullptr), shape_({}), index_({}) {};
-    NDArray(const std::vector<unsigned int> &shape);
+    NDArray() : data_(nullptr), shape_({}), index_({}) {}
+    explicit NDArray(const std::vector<unsigned int> &shape);
     NDArray(const std::vector<unsigned int> &shape, const std::vector<T> &values);
-    NDArray(const std::initializer_list<unsigned int> &shape) : NDArray(std::vector<unsigned int>(shape)) {};
+    NDArray(const std::initializer_list<unsigned int> &shape) : NDArray(std::vector<unsigned int>(shape)) {}
     NDArray(const NDArray<T> &other);
     NDArray(NDArray<T> &&other) = default;
-    ~NDArray() {};
+    ~NDArray() {}
 
     NDArray<T> &operator=(const NDArray<T> &other);
     NDArray<T> &operator=(NDArray<T> &&other) = default;
@@ -33,14 +39,17 @@ public:
      * Converts zero-dimensional array to single number.
      */
     operator T() const;
+
     /**
      * Returns number of dimensions.
      */
     unsigned int ndim() const;
+
     /**
      * Returns number of elements.
      */
     unsigned int size() const;
+
     /**
      * Returns shape of the array.
      */
@@ -56,6 +65,7 @@ public:
      * Creates array of given shape filled with zeros.
      */
     static NDArray<T> zeros(const std::initializer_list<unsigned int> &shape);
+
     /**
      * Creates array of given shape filled with ones.
      */
@@ -78,7 +88,7 @@ NDArray<T>::NDArray(const std::vector<unsigned int> &shape) : shape_(shape) {
     }
     data_ = std::shared_ptr<T[]>(new T[size]);
     index_.resize(shape.size(), -1);
-};
+}
 
 template <typename T>
 NDArray<T>::NDArray(const std::vector<unsigned int> &shape, const std::vector<T> &values) : shape_(shape) {
@@ -91,7 +101,7 @@ NDArray<T>::NDArray(const std::vector<unsigned int> &shape, const std::vector<T>
     if (size != values.size()) {
         throw std::invalid_argument("Invalid number of values");
     }
-    for (int i = 0; i < (int)size; ++i) {
+    for (int i = 0; i < static_cast<int>(size); ++i) {
         data_[i] = values[i];
     }
 }
@@ -100,7 +110,7 @@ template <typename T>
 NDArray<T>::NDArray(const NDArray<T> &other) : shape_(other.shape()) {
     data_ = std::shared_ptr<T[]>(new T[other.size()]);
 
-    for (int i = 0; i < (int)size(); ++i) {
+    for (int i = 0; i < static_cast<int>(size()); ++i) {
         data_[i] = other.data_[other.flat_index(i)];
     }
     index_.resize(other.ndim(), -1);
@@ -125,7 +135,7 @@ NDArray<T> &NDArray<T>::operator=(const NDArray<T> &other) {
             throw std::invalid_argument("Provided ndarrays have different shapes");
         }
     }
-    for (int i = 0; i < (int)size(); ++i) {
+    for (int i = 0; i < static_cast<int>(size()); ++i) {
         data_[flat_index(i)] = other.data_[other.flat_index(i)];
     }
 
@@ -134,7 +144,7 @@ NDArray<T> &NDArray<T>::operator=(const NDArray<T> &other) {
 
 template <typename T>
 T NDArray<T>::operator=(T other) {
-    for (int i = 0; i < (int)size(); ++i) {
+    for (int i = 0; i < static_cast<int>(size()); ++i) {
         data_[flat_index(i)] = other;
     }
     return other;
@@ -150,10 +160,10 @@ NDArray<T> NDArray<T>::operator[](const std::vector<int> &index) const {
     ret.data_ = data_;
     ret.shape_ = shape_;
     ret.index_.clear();
-    for (int i = 0, j = 0; i < (int)shape_.size(); ++i) {
-        if (index_[i] == -1 && j < (int)index.size()) {
+    for (int i = 0, j = 0; i < static_cast<int>(shape_.size()); ++i) {
+        if (index_[i] == -1 && j < static_cast<int>(index.size())) {
             int idx = index[j] >= 0 ? index[j] : shape_[i] + index[j];
-            if (idx > (int)shape_[i] || idx < 0) {
+            if (idx > static_cast<int>(shape_[i]) || idx < 0) {
                 throw std::invalid_argument("Invalid index");
             }
             ret.index_.push_back(idx);
@@ -177,7 +187,7 @@ NDArray<T>::operator T() const {
 template <typename T>
 unsigned int NDArray<T>::ndim() const {
     unsigned int ndim = 0;
-    for (int i = 0; i < (int)shape_.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(shape_.size()); ++i) {
         if (index_[i] == -1) {
             ndim += 1;
         }
@@ -188,7 +198,7 @@ unsigned int NDArray<T>::ndim() const {
 template <typename T>
 unsigned int NDArray<T>::size() const {
     unsigned int size = 1;
-    for (int i = 0; i < (int)shape_.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(shape_.size()); ++i) {
         if (index_[i] == -1) {
             size *= shape_[i];
         }
@@ -199,7 +209,7 @@ unsigned int NDArray<T>::size() const {
 template <typename T>
 std::vector<unsigned int> NDArray<T>::shape() const {
     std::vector<unsigned int> shape;
-    for (int i = 0; i < (int)shape_.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(shape_.size()); ++i) {
         if (index_[i] == -1) {
             shape.push_back(shape_[i]);
         }
@@ -209,7 +219,7 @@ std::vector<unsigned int> NDArray<T>::shape() const {
 
 template <typename T>
 std::istream &operator>>(std::istream &is, const NDArray<T> &array) {
-    for (int i = 0; i < (int)array.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(array.size()); ++i) {
         T value;
         is >> value;
         array.data_[array.flat_index(i)] = value;
@@ -242,7 +252,7 @@ unsigned int NDArray<T>::flat_index(std::vector<int> index) const {
     }
 
     std::vector<unsigned int> final_index;
-    for (int i = 0, j = 0; i < (int)shape_.size(); ++i) {
+    for (int i = 0, j = 0; i < static_cast<int>(shape_.size()); ++i) {
         if (index_[i] == -1) {
             final_index.push_back(index[j] >= 0 ? index[j] : index[j] + shape_[i]);
             ++j;
@@ -253,7 +263,7 @@ unsigned int NDArray<T>::flat_index(std::vector<int> index) const {
 
     unsigned int flat_index = 0;
     unsigned int shape_prod = 1;
-    for (int i = (int)final_index.size() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(final_index.size()) - 1; i >= 0; --i) {
         flat_index += shape_prod * final_index[i];
         shape_prod *= shape_[i];
     }
@@ -270,7 +280,7 @@ unsigned int NDArray<T>::flat_index(int index) const {
     std::vector<unsigned int> array_shape = shape();
     std::vector<int> non_flat_index;
 
-    for (int i = (int)array_shape.size() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(array_shape.size()) - 1; i >= 0; --i) {
         non_flat_index.push_back(index % array_shape[i]);
         index /= array_shape[i];
     }
