@@ -7,6 +7,9 @@ bazel_dep(name = "rules_cuda", version = "0.2.4")
 # Abseil
 bazel_dep(name = "abseil-cpp", version = "20250512.0")
 
+# spdlog
+bazel_dep(name = "spdlog", version = "1.15.3")
+
 # GoogleTest
 bazel_dep(name = "googletest", version = "1.17.0")
 
@@ -16,7 +19,5 @@ bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
 git_override(
     module_name = "hedron_compile_commands",
     remote = "https://github.com/hedronvision/bazel-compile-commands-extractor.git",
-    commit = "0e990032f3c5a866e72615cf67e5ce22186dcb97",
-    # Replace the commit hash (above) with the latest (https://github.com/hedronvision/bazel-compile-commands-extractor/commits/main).
-    # Even better, set up Renovate and let it do the work for you (see "Suggestion: Updates" in the README).
+    commit = "4f28899228fb3ad0126897876f147ca15026151e",
 )

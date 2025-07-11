@@ -14,13 +14,27 @@ package(
 )
 
 cc_library(
-    name = "ndarray",
-    hdrs = ["ndarray.hpp"],
+    name = "consts",
+    hdrs = ["consts.hpp"]
 )
 
 cc_library(
-    name = "consts",
-    hdrs = ["consts.hpp"]
+    name = "ndarray",
+    hdrs = ["ndarray.hpp"],
+    deps = [
+        ":consts",
+        ":linalg",
+    ]
+)
+
+cc_library(
+    name = "parse_verbosity",
+    srcs = ["parse_verbosity.cpp"],
+    hdrs = ["parse_verbosity.hpp"],
+    deps = [
+        "@spdlog//:spdlog",
+        "@abseil-cpp//absl/strings:string_view",
+    ]
 )
 
 cc_library(
@@ -30,6 +44,7 @@ cc_library(
     deps = [
         ":consts",
         ":ndarray",
+        "@spdlog//:spdlog",
     ]
 )
 
@@ -37,8 +52,10 @@ cc_binary(
     name = "main",
     srcs = ["main.cpp"],
     deps = [
+        ":parse_verbosity",
         ":harm_data",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
+        "@spdlog//:spdlog",
     ]
 )
