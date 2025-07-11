@@ -74,9 +74,14 @@ public:
     void init();
 
     /**
-     * @brief Initialzies the metric.
+     * @brief Initializes the metric.
      */
     void init_geometry();
+
+    /**
+     * @brief Initializes look-up table for hot cross sections.
+     */
+    void init_hotcross();
 
     void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon);
 
@@ -98,6 +103,8 @@ private:
     double rh_;
 
     struct Geometry geometry_;
+    ndarray::NDArray<double> hotcross_table_ =
+        ndarray::NDArray<double>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
 };
 
 }; /* namespace harm */

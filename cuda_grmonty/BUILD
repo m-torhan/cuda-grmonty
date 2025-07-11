@@ -27,6 +27,24 @@ cc_library(
 )
 
 cc_library(
+    name = "mathfn",
+    srcs = ["mathfn.cpp"],
+    hdrs = ["mathfn.hpp"],
+)
+
+cc_library(
+    name = "hotcross",
+    srcs = ["hotcross.cpp"],
+    hdrs = ["hotcross.hpp"],
+    deps = [
+        ":consts",
+        ":mathfn",
+        "@spdlog//:spdlog",
+    ],
+)
+
+
+cc_library(
     name = "ndarray",
     hdrs = ["ndarray.hpp"],
     deps = [
@@ -51,6 +69,7 @@ cc_library(
     hdrs = ["harm_model.hpp"],
     deps = [
         ":consts",
+        ":hotcross",
         ":ndarray",
         "@spdlog//:spdlog",
     ]
