@@ -10,13 +10,13 @@ cc_test(
 )
 
 cc_test(
-    name = "harm_data_test",
+    name = "harm_model_test",
     size = "small",
-    srcs = ["harm_data_test.cpp"],
+    srcs = ["harm_model_test.cpp"],
     deps = [
         "@googletest//:gtest",
         "@googletest//:gtest_main",
-        "//cuda_grmonty:harm_data",
+        "//cuda_grmonty:harm_model",
         "//cuda_grmonty:ndarray",
     ],
 )

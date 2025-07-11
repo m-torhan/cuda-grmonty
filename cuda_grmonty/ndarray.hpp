@@ -11,12 +11,17 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+#include "cuda_grmonty/consts.hpp"
+#include "cuda_grmonty/linalg.hpp"
 
 namespace ndarray {
 
 /**
- * N-dimensional array.
+ * @brief N-dimensional array.
  */
 template <typename T>
 class NDArray {
@@ -36,40 +41,49 @@ public:
     NDArray<T> operator[](const std::vector<int> &index) const;
 
     /**
-     * Converts zero-dimensional array to single number.
+     * @brief Converts zero-dimensional array to single number.
      */
     operator T() const;
 
     /**
-     * Returns number of dimensions.
+     * @brief Returns number of dimensions.
      */
     unsigned int ndim() const;
 
     /**
-     * Returns number of elements.
+     * @brief Returns number of elements.
      */
     unsigned int size() const;
 
     /**
-     * Returns shape of the array.
+     * @brief Returns shape of the array.
      */
     std::vector<unsigned int> shape() const;
 
     /**
-     * Reads values from input stream.
+     * @brief Reads values from input stream.
      */
     template <typename U>
     friend std::istream &operator>>(std::istream &is, const NDArray<U> &array);
 
     /**
-     * Creates array of given shape filled with zeros.
+     * @brief Creates array of given shape filled with zeros.
+     *
+     * @param shape Shape of the created array.
      */
     static NDArray<T> zeros(const std::initializer_list<unsigned int> &shape);
 
     /**
-     * Creates array of given shape filled with ones.
+     * @brief Creates array of given shape filled with ones.
+     *
+     * @param shape Shape of the created array.
      */
     static NDArray<T> ones(const std::initializer_list<unsigned int> &shape);
+
+    /**
+     * @brief 2D array determinant.
+     */
+    T det() const;
 
 private:
     unsigned int flat_index(std::vector<int> index) const;
@@ -110,7 +124,7 @@ template <typename T>
 NDArray<T>::NDArray(const NDArray<T> &other) : shape_(other.shape()) {
     data_ = std::shared_ptr<T[]>(new T[other.size()]);
 
-    for (int i = 0; i < static_cast<int>(size()); ++i) {
+    for (int i = 0; i < static_cast<int>(other.size()); ++i) {
         data_[i] = other.data_[other.flat_index(i)];
     }
     index_.resize(other.ndim(), -1);
@@ -243,6 +257,29 @@ NDArray<T> NDArray<T>::ones(const std::initializer_list<unsigned int> &shape) {
     arr = 1;
 
     return arr;
+}
+
+template <typename T>
+T NDArray<T>::det() const {
+    if (ndim() != 2) {
+        throw std::invalid_argument("Array should be 2-dimensional");
+    }
+    auto shape = this->shape();
+    if (shape[0] != shape[1]) {
+        throw std::invalid_argument("Array should be square");
+    }
+    int n = static_cast<int>(shape[0]);
+    T *data = new T[n * n];
+
+    for (int i = 0; i < static_cast<int>(size()); ++i) {
+        data[i] = data_[flat_index(i)];
+    }
+
+    T ret = linalg::matrix::det(n, data);
+
+    delete[] data;
+
+    return ret;
 }
 
 template <typename T>
