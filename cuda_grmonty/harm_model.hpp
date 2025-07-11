@@ -5,8 +5,10 @@
  */
 #pragma once
 
+#include <array>
 #include <string>
 
+#include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/ndarray.hpp"
 
 namespace harm {
@@ -47,25 +49,55 @@ struct Data {
     ndarray::NDArray<double> b_1; /* contravariant magnetic field components */
     ndarray::NDArray<double> b_2;
     ndarray::NDArray<double> b_3;
-    double bias_norm;
 };
 
-class HARMData {
+struct Geometry {
+    ndarray::NDArray<double> cov;
+    ndarray::NDArray<double> con;
+    ndarray::NDArray<double> det;
+};
+
+struct BLCoord {
+    double r;
+    double theta;
+};
+
+class HARMModel {
 public:
     /**
-     * Reads HARM data from file
+     * @brief Reads HARM data from file.
      *
-     * @param filepath Path to HARM dump
+     * @param filepath Path to HARM dump.
      */
     void read_file(std::string filepath);
 
-    const struct Header *get_header() { return &header; }
+    void init();
 
-    const struct Data *get_data() { return &data; }
+    /**
+     * @brief Initialzies the metric.
+     */
+    void init_geometry();
+
+    void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon);
+
+    void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov);
+
+    struct BLCoord get_bl_coord(double x[consts::n_dim]);
+
+    std::array<double, 4> get_coord(int x_1, int x_2);
+
+    const struct Header *get_header() { return &header_; }
+
+    const struct Data *get_data() { return &data_; }
 
 private:
-    struct Header header;
-    struct Data data;
+    struct Header header_;
+    struct Data data_;
+
+    double bias_norm_;
+    double rh_;
+
+    struct Geometry geometry_;
 };
 
 }; /* namespace harm */
