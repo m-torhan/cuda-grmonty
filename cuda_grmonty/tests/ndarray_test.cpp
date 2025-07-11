@@ -276,7 +276,12 @@ TEST(NDArray, ConvertToNumberInvalidDim) {
 
     a = 0;
 
-    EXPECT_THROW({ int b = a; }, std::invalid_argument);
+    EXPECT_THROW(
+        {
+            int b = a;
+            (void)b;
+        },
+        std::invalid_argument);
 }
 
 /**
@@ -446,6 +451,79 @@ TEST(NDArray, Ones) {
             ASSERT_EQ(1, value);
         }
     }
+}
+
+/**
+ * Tests determinant of 1x1 integer array computation.
+ */
+TEST(NDArray, Det1DInt) {
+    ndarray::NDArray<int> a({1, 1}, {6});
+
+    ASSERT_EQ(6, a.det());
+}
+
+/**
+ * Tests determinant of 2x2 integer array computation.
+ */
+TEST(NDArray, Det2DInt) {
+    /* clang-format off */
+    ndarray::NDArray<int> a({2, 2}, {3, 5, 2, 4});
+    /* clang-format on */
+
+    ASSERT_EQ(2, a.det());
+}
+
+/**
+ * Tests determinant of singular 2x2 integer array computation.
+ */
+TEST(NDArray, Det2DIntSingular) {
+    /* clang-format off */
+    ndarray::NDArray<int> a({2, 2}, { 3,  5,
+                                      6, 10});
+    /* clang-format on */
+
+    ASSERT_EQ(0, a.det());
+}
+
+/**
+ * Tests determinant of 3x3 integer array computation.
+ */
+TEST(NDArray, Det3DInt) {
+    /* clang-format off */
+    ndarray::NDArray<int> a({3, 3}, { 1,  2,  3,
+                                      0, -4,  1,
+                                      2,  3,  0});
+    /* clang-format on */
+
+    ASSERT_EQ(25, a.det());
+}
+
+/**
+ * Tests determinant of 4x4 integer array computation.
+ */
+TEST(NDArray, Det4DInt) {
+    /* clang-format off */
+    ndarray::NDArray<int> a({4, 4}, { 1,  0,  2, -1,
+                                      3,  0,  0,  5,
+                                      2,  1,  4, -3,
+                                      1,  0,  5,  0});
+    /* clang-format on */
+
+    ASSERT_EQ(30, a.det());
+}
+
+/**
+ * Tests determinant of 4x4 float array computation.
+ */
+TEST(NDArray, Det4DFloat) {
+    /* clang-format off */
+    ndarray::NDArray<float> a({4, 4}, { 1.5,  0.0,  2.2, -1.1,
+                                        3.0,  0.0,  0.0,  5.5,
+                                        2.1,  1.0,  4.3, -3.3,
+                                        1.0,  0.0,  5.0,  0.0});
+    /* clang-format on */
+
+    ASSERT_FLOAT_EQ(45.65, a.det());
 }
 
 static std::string gen_shape_str(const testing::TestParamInfo<NDArrayShapeFixture::ParamType> &info) {
