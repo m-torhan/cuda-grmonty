@@ -5,10 +5,18 @@
  */
 #pragma once
 
+#include <cmath>
+
 namespace consts {
 
 constexpr int n_dim = 4;
 constexpr int n_prim = 8;
+
+constexpr double eps = 1.0e-40;
+
+constexpr int n_e_samp = 200;
+constexpr int n_e_bins = 200;
+constexpr int n_th_bins = 6;
 
 /* range of initial superphoton frequencies */
 constexpr double nu_min = 1.0e9;

@@ -19,6 +19,14 @@ cc_library(
 )
 
 cc_library(
+    name = "linalg",
+    hdrs = ["linalg.hpp"],
+    deps = [
+        ":consts",
+    ]
+)
+
+cc_library(
     name = "ndarray",
     hdrs = ["ndarray.hpp"],
     deps = [
@@ -38,9 +46,9 @@ cc_library(
 )
 
 cc_library(
-    name = "harm_data",
-    srcs = ["harm_data.cpp"],
-    hdrs = ["harm_data.hpp"],
+    name = "harm_model",
+    srcs = ["harm_model.cpp"],
+    hdrs = ["harm_model.hpp"],
     deps = [
         ":consts",
         ":ndarray",
@@ -53,7 +61,7 @@ cc_binary(
     srcs = ["main.cpp"],
     deps = [
         ":parse_verbosity",
-        ":harm_data",
+        ":harm_model",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@spdlog//:spdlog",
