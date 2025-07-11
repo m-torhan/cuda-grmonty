@@ -17,6 +17,7 @@
 
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/harm_model.hpp"
+#include "cuda_grmonty/hotcross.hpp"
 
 namespace harm {
 
@@ -174,7 +175,10 @@ void HARMModel::read_file(std::string filepath) {
     spdlog::info("Reading file done");
 }
 
-void HARMModel::init() { init_geometry(); }
+void HARMModel::init() {
+    init_geometry();
+    init_hotcross();
+}
 
 void HARMModel::init_geometry() {
     spdlog::info("Initializing HARM model geometry");
@@ -195,6 +199,28 @@ void HARMModel::init_geometry() {
     }
 
     spdlog::info("Initializing HARM model geometry done");
+}
+
+void HARMModel::init_hotcross() {
+    spdlog::info("Initializing HARM model hotcross");
+
+    static const double l_min_w = std::log10(consts::hotcross::min_w);
+    static const double l_min_t = std::log10(consts::hotcross::min_t);
+    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
+    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
+
+    for (int i = 0; i <= consts::hotcross::n_w; ++i) {
+        spdlog::debug("{} / {}", i, consts::hotcross::n_w);
+        for (int j = 0; j <= consts::hotcross::n_t; ++j) {
+            double l_w = l_min_w + i * d_l_w;
+            double l_t = l_min_t + j * d_l_t;
+
+            hotcross_table_[{i, j}] =
+                std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
+        }
+    }
+
+    spdlog::info("Initializing HARM model hotcross done");
 }
 
 void HARMModel::gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) {
