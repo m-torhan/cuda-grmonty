@@ -54,6 +54,18 @@ cc_library(
 )
 
 cc_library(
+    name = "jnu_mixed",
+    srcs = ["jnu_mixed.cpp"],
+    hdrs = ["jnu_mixed.hpp"],
+    deps = [
+        ":consts",
+        ":mathfn",
+        ":ndarray",
+        "@spdlog//:spdlog",
+    ]
+)
+
+cc_library(
     name = "parse_verbosity",
     srcs = ["parse_verbosity.cpp"],
     hdrs = ["parse_verbosity.hpp"],
@@ -70,6 +82,7 @@ cc_library(
     deps = [
         ":consts",
         ":hotcross",
+        ":jnu_mixed",
         ":ndarray",
         "@spdlog//:spdlog",
     ]
