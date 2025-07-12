@@ -78,11 +78,6 @@ public:
      */
     void init_geometry();
 
-    /**
-     * @brief Initializes look-up table for hot cross sections.
-     */
-    void init_hotcross();
-
     void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon);
 
     void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov);

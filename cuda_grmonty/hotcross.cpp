@@ -14,11 +14,42 @@
 
 namespace hotcross {
 
+/**
+ * @brief Computes the total angle-averaged Compton scattering cross-section.
+ *
+ * @param w Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ * @param thetae Dimensionless electron temperature (thetae = k * T_e / (m_e * c^2)).
+ *
+ * @return Total angle-averaged Compton scattering cross-section, in units of the Thomson cross-section (sigma_T).
+ */
+static double total_compton_cross_num(double w, double theta_e);
+
 static double hc_klein_nishina(double w);
 
 static double dnd_gamma_e(double theta_e, double gamma_e);
 
 static double boostcross(double w, double mu_e, double gamma_e);
+
+void init_table(ndarray::NDArray<double> &table) {
+    spdlog::info("Initializing HARM model hotcross");
+
+    static const double l_min_w = std::log10(consts::hotcross::min_w);
+    static const double l_min_t = std::log10(consts::hotcross::min_t);
+    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
+    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
+
+    for (int i = 0; i <= consts::hotcross::n_w; ++i) {
+        spdlog::debug("{} / {}", i, consts::hotcross::n_w);
+        for (int j = 0; j <= consts::hotcross::n_t; ++j) {
+            double l_w = l_min_w + i * d_l_w;
+            double l_t = l_min_t + j * d_l_t;
+
+            table[{i, j}] = std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
+        }
+    }
+
+    spdlog::info("Initializing HARM model hotcross done");
+}
 
 double total_compton_cross_num(double w, double theta_e) {
     if (std::isnan(w)) {
