@@ -5,10 +5,12 @@
  */
 
 #include <cmath>
+#include <numbers>
 
 #include "spdlog/spdlog.h"
 
 #include "cuda_grmonty/consts.hpp"
+#include "cuda_grmonty/integration.hpp"
 #include "cuda_grmonty/jnu_mixed.hpp"
 #include "cuda_grmonty/mathfn.hpp"
 #include "cuda_grmonty/ndarray.hpp"
@@ -28,11 +30,13 @@ void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2
     static const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
+        spdlog::debug("{} / {}", i, consts::n_e_samp);
         double k = std::exp(i * d_l_k + l_min_k);
         f[{i}] = jnu_mixed::emiss_table_f(k);
     }
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
+        spdlog::debug("{} / {}", i, consts::n_e_samp);
         double t = std::exp(i * d_l_t + l_min_t);
         k2[{i}] = std::log(mathfn::bessel_Kn(2, 1.0 / t));
     }
@@ -52,6 +56,12 @@ static double jnu_integrand(double th, double k) {
            std::exp(-std::pow(x, 1.0 / 3.0));
 }
 
-static double emiss_table_f(double k) { return 0.0; }
+static double emiss_table_f(double k) {
+    double result =
+        integration::gauss_kronrod_61([k](double th) { return jnu_integrand(th, k); }, 0, std::numbers::pi / 2.0,
+                                      consts::jnu::eps_abs, consts::jnu::eps_rel, 20, 1000);
+
+    return std::log(4 * std::numbers::pi * result);
+}
 
 }; /* namespace jnu_mixed */
