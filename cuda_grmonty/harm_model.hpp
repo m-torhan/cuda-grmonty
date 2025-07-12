@@ -100,6 +100,8 @@ private:
     struct Geometry geometry_;
     ndarray::NDArray<double> hotcross_table_ =
         ndarray::NDArray<double>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
+    ndarray::NDArray<double> f_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
+    ndarray::NDArray<double> k2_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
 };
 
 }; /* namespace harm */
