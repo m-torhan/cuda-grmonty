@@ -27,6 +27,15 @@ cc_library(
 )
 
 cc_library(
+    name = "ndarray",
+    hdrs = ["ndarray.hpp"],
+    deps = [
+        ":consts",
+        ":linalg",
+    ]
+)
+
+cc_library(
     name = "mathfn",
     srcs = ["mathfn.cpp"],
     hdrs = ["mathfn.hpp"],
@@ -39,18 +48,9 @@ cc_library(
     deps = [
         ":consts",
         ":mathfn",
+        ":ndarray",
         "@spdlog//:spdlog",
     ],
-)
-
-
-cc_library(
-    name = "ndarray",
-    hdrs = ["ndarray.hpp"],
-    deps = [
-        ":consts",
-        ":linalg",
-    ]
 )
 
 cc_library(
