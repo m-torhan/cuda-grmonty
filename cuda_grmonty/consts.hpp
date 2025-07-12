@@ -22,8 +22,8 @@ constexpr int n_th_bins = 6;
 constexpr double nu_min = 1.0e9;
 constexpr double nu_max = 1.0e16;
 
-constexpr double thetae_min = 1000.0;
-constexpr double thetae_max = 0.3;
+constexpr double thetae_min = 0.3;
+constexpr double thetae_max = 1000.0;
 constexpr double tp_over_te = 3.0;
 
 constexpr double weight_min = 1.0e31;
@@ -47,5 +47,19 @@ constexpr double d_mu_e = 0.05;
 constexpr double d_gamma_e = 0.05;
 
 }; /* namespace hotcross */
+
+namespace jnu {
+
+constexpr double eps_abs = 0.0;
+constexpr double rps_rel = 1.0e-6;
+
+constexpr double min_k = 0.002;
+constexpr double max_k = 1.0e7;
+constexpr double min_t = thetae_min;
+constexpr double max_t = 1.0e2;
+
+constexpr double cst = 1.88774862536; /* 2^{11/12} */
+
+}; /* namespace jnu */
 
 }; /* namespace consts */

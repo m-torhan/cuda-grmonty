@@ -18,6 +18,7 @@
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/harm_model.hpp"
 #include "cuda_grmonty/hotcross.hpp"
+#include "cuda_grmonty/jnu_mixed.hpp"
 
 namespace harm {
 
@@ -178,6 +179,7 @@ void HARMModel::read_file(std::string filepath) {
 void HARMModel::init() {
     init_geometry();
     hotcross::init_table(hotcross_table_);
+    jnu_mixed::init_emiss_tables(f_, k2_);
 }
 
 void HARMModel::init_geometry() {
