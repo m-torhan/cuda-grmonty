@@ -51,7 +51,7 @@ constexpr double d_gamma_e = 0.05;
 namespace jnu {
 
 constexpr double eps_abs = 0.0;
-constexpr double rps_rel = 1.0e-6;
+constexpr double eps_rel = 1.0e-6;
 
 constexpr double min_k = 0.002;
 constexpr double max_k = 1.0e7;
