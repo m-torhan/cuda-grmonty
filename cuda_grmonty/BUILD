@@ -36,6 +36,12 @@ cc_library(
 )
 
 cc_library(
+    name = "integration",
+    srcs = ["integration.cpp"],
+    hdrs = ["integration.hpp"],
+)
+
+cc_library(
     name = "mathfn",
     srcs = ["mathfn.cpp"],
     hdrs = ["mathfn.hpp"],
@@ -59,6 +65,7 @@ cc_library(
     hdrs = ["jnu_mixed.hpp"],
     deps = [
         ":consts",
+        ":integration",
         ":mathfn",
         ":ndarray",
         "@spdlog//:spdlog",
