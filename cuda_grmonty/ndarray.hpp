@@ -61,6 +61,11 @@ public:
     std::vector<unsigned int> shape() const;
 
     /**
+     * @brief Converts 0-dim array to value.
+     */
+    T value() const;
+
+    /**
      * @brief Reads values from input stream.
      */
     template <typename U>
@@ -229,6 +234,11 @@ std::vector<unsigned int> NDArray<T>::shape() const {
         }
     }
     return shape;
+}
+
+template <typename T>
+T NDArray<T>::value() const {
+    return static_cast<T>(*this);
 }
 
 template <typename T>
