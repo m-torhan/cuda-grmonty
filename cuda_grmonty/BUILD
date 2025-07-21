@@ -36,6 +36,16 @@ cc_library(
 )
 
 cc_library(
+    name = "tetrads",
+    srcs = ["tetrads.cpp"],
+    hdrs = ["tetrads.hpp"],
+    deps = [
+        ":consts",
+        ":ndarray",
+    ]
+)
+
+cc_library(
     name = "integration",
     srcs = ["integration.cpp"],
     hdrs = ["integration.hpp"],
@@ -91,6 +101,7 @@ cc_library(
         ":hotcross",
         ":jnu_mixed",
         ":ndarray",
+        ":tetrads",
         "@spdlog//:spdlog",
     ]
 )
