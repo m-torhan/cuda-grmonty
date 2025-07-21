@@ -42,7 +42,7 @@ const harm::Header sample_header{
 
 /* clang-format off */
 const harm::Data sample_data{
-    .p = ndarray::NDArray<double>(
+    .k_rho = ndarray::NDArray<double>(
         {2, 3},
         {
             111.0, 112.0, 113.0,
@@ -123,7 +123,7 @@ TEST(HARMModel, ReadFileHeader) {
     file.close();
 
     /* read file */
-    harm::HARMModel harm_model;
+    harm::HARMModel harm_model(100, 4e19);
 
     harm_model.read_file(filepath);
 
@@ -175,12 +175,12 @@ TEST(HARMModel, ReadFileData) {
     file.close();
 
     /* read file */
-    harm::HARMModel harm_model;
+    harm::HARMModel harm_model(100, 4e19);
 
     harm_model.read_file(filepath);
 
     /* check values */
-    ASSERT_EQ(2, harm_model.get_data()->p.ndim());
+    ASSERT_EQ(2, harm_model.get_data()->k_rho.ndim());
     ASSERT_EQ(2, harm_model.get_data()->u.ndim());
     ASSERT_EQ(2, harm_model.get_data()->u_1.ndim());
     ASSERT_EQ(2, harm_model.get_data()->u_2.ndim());
@@ -189,7 +189,7 @@ TEST(HARMModel, ReadFileData) {
     ASSERT_EQ(2, harm_model.get_data()->b_2.ndim());
     ASSERT_EQ(2, harm_model.get_data()->b_3.ndim());
 
-    ASSERT_EQ(sample_header.n[0], harm_model.get_data()->p.shape()[0]);
+    ASSERT_EQ(sample_header.n[0], harm_model.get_data()->k_rho.shape()[0]);
     ASSERT_EQ(sample_header.n[0], harm_model.get_data()->u.shape()[0]);
     ASSERT_EQ(sample_header.n[0], harm_model.get_data()->u_1.shape()[0]);
     ASSERT_EQ(sample_header.n[0], harm_model.get_data()->u_2.shape()[0]);
@@ -198,7 +198,7 @@ TEST(HARMModel, ReadFileData) {
     ASSERT_EQ(sample_header.n[0], harm_model.get_data()->b_2.shape()[0]);
     ASSERT_EQ(sample_header.n[0], harm_model.get_data()->b_3.shape()[0]);
 
-    ASSERT_EQ(sample_header.n[1], harm_model.get_data()->p.shape()[1]);
+    ASSERT_EQ(sample_header.n[1], harm_model.get_data()->k_rho.shape()[1]);
     ASSERT_EQ(sample_header.n[1], harm_model.get_data()->u.shape()[1]);
     ASSERT_EQ(sample_header.n[1], harm_model.get_data()->u_1.shape()[1]);
     ASSERT_EQ(sample_header.n[1], harm_model.get_data()->u_2.shape()[1]);
@@ -209,22 +209,14 @@ TEST(HARMModel, ReadFileData) {
 
     for (int i = 0; i < static_cast<int>(sample_header.n[0]); ++i) {
         for (int j = 0; j < static_cast<int>(sample_header.n[1]); ++j) {
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.p[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->p[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->u[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_1[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->u_1[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_2[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->u_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.u_2[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->u_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_1[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->b_1[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_2[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->b_2[{i, j}]));
-            ASSERT_DOUBLE_EQ(static_cast<double>(sample_data.b_2[{i, j}]),
-                             static_cast<double>(harm_model.get_data()->b_2[{i, j}]));
+            ASSERT_DOUBLE_EQ((sample_data.k_rho[{i, j}].value()), (harm_model.get_data()->k_rho[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.u[{i, j}].value()), (harm_model.get_data()->u[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.u_1[{i, j}].value()), (harm_model.get_data()->u_1[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.u_2[{i, j}].value()), (harm_model.get_data()->u_2[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.u_2[{i, j}].value()), (harm_model.get_data()->u_2[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.b_1[{i, j}].value()), (harm_model.get_data()->b_1[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.b_2[{i, j}].value()), (harm_model.get_data()->b_2[{i, j}].value()));
+            ASSERT_DOUBLE_EQ((sample_data.b_2[{i, j}].value()), (harm_model.get_data()->b_2[{i, j}].value()));
         }
     }
 }
@@ -247,17 +239,17 @@ static void write_sample_harm_header(std::ofstream &file) {
 }
 
 static void write_sample_harm_model(std::ofstream &file) {
-    for (int j = 0; j < static_cast<int>(sample_header.n[1]); ++j) {
-        for (int i = 0; i < static_cast<int>(sample_header.n[0]); ++i) {
+    for (int i = 0; i < static_cast<int>(sample_header.n[0]); ++i) {
+        for (int j = 0; j < static_cast<int>(sample_header.n[1]); ++j) {
             file << "0 0 0 0 "; /* x[1], x[2], r, h */
-            file << std::format("{} ", static_cast<double>(sample_data.p[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.u[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.u_1[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.u_2[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.u_3[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.b_1[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.b_2[{i, j}]));
-            file << std::format("{} ", static_cast<double>(sample_data.b_3[{i, j}]));
+            file << std::format("{} ", sample_data.k_rho[{i, j}].value());
+            file << std::format("{} ", sample_data.u[{i, j}].value());
+            file << std::format("{} ", sample_data.u_1[{i, j}].value());
+            file << std::format("{} ", sample_data.u_2[{i, j}].value());
+            file << std::format("{} ", sample_data.u_3[{i, j}].value());
+            file << std::format("{} ", sample_data.b_1[{i, j}].value());
+            file << std::format("{} ", sample_data.b_2[{i, j}].value());
+            file << std::format("{} ", sample_data.b_3[{i, j}].value());
             file << "0 ";               /* div_b */
             file << "0 0 0 0 0 0 0 0 "; /* u_con, u_cov */
             file << "0 0 0 0 0 0 0 0 "; /* b_con, b_cov */
