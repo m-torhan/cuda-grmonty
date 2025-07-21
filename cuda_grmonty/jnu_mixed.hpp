@@ -12,4 +12,8 @@ namespace jnu_mixed {
 
 void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2);
 
+double k2_eval(double theta_e, const ndarray::NDArray<double> &k2_table);
+
+double f_eval(double theta_e, double b_mag, double nu, const ndarray::NDArray<double> &f_table);
+
 }; /* namespace jnu_mixed */

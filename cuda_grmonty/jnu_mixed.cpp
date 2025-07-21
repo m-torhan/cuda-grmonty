@@ -21,6 +21,10 @@ static double jnu_integrand(double th, double k);
 
 static double emiss_table_f(double k);
 
+static double linear_interp_k2(double theta_e, const ndarray::NDArray<double> &k2_table);
+
+static double linear_interp_f(double k, const ndarray::NDArray<double> &f_table);
+
 void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2) {
     spdlog::info("Initializing HARM model emission tables");
 
@@ -44,6 +48,31 @@ void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2
     spdlog::info("Initializing HARM model emission tables done");
 }
 
+double k2_eval(double theta_e, const ndarray::NDArray<double> &k2_table) {
+    if (theta_e < consts::theta_e_min) {
+        return 0.0;
+    }
+    if (theta_e > consts::jnu::max_t) {
+        return 2.0 * theta_e * theta_e;
+    }
+
+    return linear_interp_k2(theta_e, k2_table);
+}
+
+double f_eval(double theta_e, double b_mag, double nu, const ndarray::NDArray<double> &f_table) {
+    double k = consts::jnu::k_fac * nu / (b_mag * theta_e * theta_e);
+
+    if (k > consts::jnu::max_k) {
+        return 0.0;
+    }
+    if (k < consts::jnu::min_k) {
+        double x = std::pow(k, 1.0 / 3.0);
+        return x * (37.67503800178 + 2.240274341836 * x);
+    }
+
+    return linear_interp_f(k, f_table);
+}
+
 static double jnu_integrand(double th, double k) {
     double sin_th = std::sin(th);
     double x = k / sin_th;
@@ -59,9 +88,35 @@ static double jnu_integrand(double th, double k) {
 static double emiss_table_f(double k) {
     double result =
         integration::gauss_kronrod_61([k](double th) { return jnu_integrand(th, k); }, 0, std::numbers::pi / 2.0,
-                                      consts::jnu::eps_abs, consts::jnu::eps_rel, 20, 1000);
+                                      consts::jnu::eps_abs, consts::jnu::eps_rel, 1000);
 
     return std::log(4 * std::numbers::pi * result);
+}
+
+static double linear_interp_k2(double theta_e, const ndarray::NDArray<double> &k2_table) {
+    static const double l_min_t = std::log(consts::jnu::min_t);
+    static const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
+
+    double l_t = std::log(theta_e);
+    double d_i = (l_t - l_min_t) / d_l_t;
+    int i = static_cast<int>(d_i);
+
+    d_i -= i;
+
+    return std::exp((1.0 - d_i) * k2_table[{i}].value() + d_i * k2_table[{i + 1}].value());
+}
+
+static double linear_interp_f(double k, const ndarray::NDArray<double> &f_table) {
+    static const double l_min_k = std::log(consts::jnu::min_k);
+    static const double d_l_k = std::log(consts::jnu::max_k / consts::jnu::min_k) / consts::n_e_samp;
+
+    double l_k = std::log(k);
+    double d_i = (l_k - l_min_k) / d_l_k;
+    int i = static_cast<int>(d_i);
+
+    d_i -= i;
+
+    return std::exp((1.0 - d_i) * f_table[{i}].value() + d_i * f_table[{i + 1}].value());
 }
 
 }; /* namespace jnu_mixed */
