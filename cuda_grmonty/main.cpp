@@ -15,7 +15,7 @@
 
 // Define cli args
 ABSL_FLAG(int, photon_n, 5000000, "Estimate of photon number");
-ABSL_FLAG(float, mass_unit, 4e19, "Mass unit");
+ABSL_FLAG(double, mass_unit, 4e19, "Mass unit");
 ABSL_FLAG(std::string, harm_dump_path, "", "HARM dump file path");
 ABSL_FLAG(spdlog::level::level_enum, verbosity, spdlog::level::info, "Logging verbosity");
 
@@ -34,7 +34,8 @@ int main(int argc, char *argv[]) {
     spdlog::info("\tmass_unit: {}", mass_unit);
     spdlog::info("\tharm_dump_path: {}", harm_dump_path);
 
-    harm::HARMModel harm_model;
+    harm::HARMModel harm_model(photon_n, mass_unit);
+
     harm_model.read_file(harm_dump_path);
 
     harm_model.init();

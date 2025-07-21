@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
 #pragma once
 
 #include <array>
@@ -41,9 +42,9 @@ struct Header {
 };
 
 struct Data {
-    ndarray::NDArray<double> p;   /* rest-mass density */
-    ndarray::NDArray<double> u;   /* internal eneergy density */
-    ndarray::NDArray<double> u_1; /* covariant velocity components */
+    ndarray::NDArray<double> k_rho; /* rest-mass density */
+    ndarray::NDArray<double> u;     /* internal eneergy density */
+    ndarray::NDArray<double> u_1;   /* covariant velocity components */
     ndarray::NDArray<double> u_2;
     ndarray::NDArray<double> u_3;
     ndarray::NDArray<double> b_1; /* contravariant magnetic field components */
@@ -62,8 +63,22 @@ struct BLCoord {
     double theta;
 };
 
+struct FluidZone {
+    double n_e;
+    double theta_e;
+    double b;
+    double u_con[consts::n_dim];
+    double b_con[consts::n_dim];
+};
+
 class HARMModel {
 public:
+    explicit HARMModel(int photon_n, double mass_unit);
+
+    HARMModel(const HARMModel &) = delete;
+
+    HARMModel &operator=(const HARMModel &) = delete;
+
     /**
      * @brief Reads HARM data from file.
      *
@@ -78,17 +93,29 @@ public:
      */
     void init_geometry();
 
-    void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon);
+    void init_weight_table();
 
-    void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov);
+    void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) const;
 
-    struct BLCoord get_bl_coord(double x[consts::n_dim]);
+    void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
 
-    std::array<double, 4> get_coord(int x_1, int x_2);
+    struct FluidZone get_fluid_zone(int x_1, int x_2) const;
 
-    const struct Header *get_header() { return &header_; }
+    struct BLCoord get_bl_coord(double x[consts::n_dim]) const;
 
-    const struct Data *get_data() { return &data_; }
+    std::array<double, 4> get_coord(int x_1, int x_2) const;
+
+    const struct Header *get_header() const { return &header_; }
+
+    const struct Data *get_data() const { return &data_; }
+
+    const int get_photon_n() const { return photon_n_; }
+
+    const double get_l_unit() const { return l_unit_; }
+
+    const Geometry &get_geometry() const { return geometry_; }
+
+    const ndarray::NDArray<double> &get_k2_table() const { return k2_; }
 
 private:
     struct Header header_;
@@ -97,11 +124,23 @@ private:
     double bias_norm_;
     double rh_;
 
+    int photon_n_;
+    double mass_unit_;
+    double l_unit_;
+    double t_unit_;
+    double rho_unit_;
+    double u_unit_;
+    double b_unit_;
+    double theta_e_unit_;
+    double n_e_unit_;
+    double max_tau_scatt_;
+
     struct Geometry geometry_;
     ndarray::NDArray<double> hotcross_table_ =
         ndarray::NDArray<double>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
     ndarray::NDArray<double> f_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
     ndarray::NDArray<double> k2_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
+    ndarray::NDArray<double> weight_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
 };
 
 }; /* namespace harm */
