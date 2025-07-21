@@ -11,9 +11,8 @@
 #include <cmath>
 #include <numbers>
 
-constexpr double eps_abs = 0.0;
+constexpr double eps_abs = 1.0e-6;
 constexpr double eps_rel = 1.0e-6;
-constexpr int max_depth = 20;
 constexpr int max_intervals = 1000;
 
 TEST(Integration, GaussKronrodConst) {
@@ -21,7 +20,7 @@ TEST(Integration, GaussKronrodConst) {
     double a = 0;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(1.0, result, eps_rel);
 }
@@ -31,7 +30,7 @@ TEST(Integration, GaussKronrodLinear) {
     double a = 0;
     double b = 2;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(6.0, result, eps_rel);
 }
@@ -41,7 +40,7 @@ TEST(Integration, GaussKronrodSquare) {
     double a = -1;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(4.0 / 3.0, result, eps_rel);
 }
@@ -51,7 +50,7 @@ TEST(Integration, GaussKronrodSin) {
     double a = 0;
     double b = std::numbers::pi;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(2.0, result, eps_rel);
 }
@@ -61,7 +60,7 @@ TEST(Integration, GaussKronrodAbs) {
     double a = 0;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(0.29, result, eps_rel);
 }
@@ -71,7 +70,7 @@ TEST(Integration, GaussKronrodSqrt) {
     double a = 0;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(2.0 / 3.0, result, eps_rel);
 }
@@ -81,7 +80,7 @@ TEST(Integration, GaussKronrodLog) {
     double a = 1.0e-5;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(-0.999874870746, result, eps_rel);
 }
@@ -91,7 +90,7 @@ TEST(Integration, GaussKronrodOscillations) {
     double a = 0;
     double b = std::numbers::pi;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(0.0, result, eps_rel);
 }
@@ -101,7 +100,7 @@ TEST(Integration, GaussKronrodSharpPeak) {
     double a = 0;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(0.0953512032278, result, eps_rel);
 }
@@ -111,7 +110,7 @@ TEST(Integration, GaussKronrodStep) {
     double a = 0;
     double b = 1;
 
-    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_depth, max_intervals);
+    double result = integration::gauss_kronrod_61(f, a, b, eps_abs, eps_rel, max_intervals);
 
     ASSERT_NEAR(0.5, result, eps_rel);
 }

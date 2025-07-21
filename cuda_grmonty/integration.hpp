@@ -11,6 +11,6 @@
 namespace integration {
 
 double gauss_kronrod_61(const std::function<double(double)> &f, double a, double b, double eps_abs, double eps_rel,
-                        int max_depth, int max_intervals);
+                        int max_intervals);
 
 }; /* namespace integration */
