@@ -95,6 +95,8 @@ public:
 
     void init_weight_table();
 
+    void init_nint_table();
+
     void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) const;
 
     void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
@@ -141,6 +143,8 @@ private:
     ndarray::NDArray<double> f_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
     ndarray::NDArray<double> k2_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
     ndarray::NDArray<double> weight_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
+    ndarray::NDArray<double> nint_ = ndarray::NDArray<double>({consts::nint + 1});
+    ndarray::NDArray<double> dndlnu_max_ = ndarray::NDArray<double>({consts::nint + 1});
 };
 
 }; /* namespace harm */
