@@ -191,6 +191,7 @@ void HARMModel::init() {
     hotcross::init_table(hotcross_table_);
     jnu_mixed::init_emiss_tables(f_, k2_);
     init_weight_table();
+    init_nint_table();
 }
 
 void HARMModel::init_geometry() {
@@ -201,6 +202,7 @@ void HARMModel::init_geometry() {
     geometry_.det = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
 
     for (int x_1 = 0; x_1 < static_cast<int>(header_.n[0]); ++x_1) {
+        spdlog::debug("{} / {}", x_1, header_.n[0]);
         for (int x_2 = 0; x_2 < static_cast<int>(header_.n[1]); ++x_2) {
             std::array<double, consts::n_dim> x = get_coord(x_1, x_2);
 
@@ -251,7 +253,48 @@ void HARMModel::init_weight_table() {
         }
     }
 
+    for (int i = 0; i <= consts::n_e_samp; ++i) {
+        weight_[{i}] = std::log(sum[i] / (consts::hpl * photon_n_));
+    }
+
     spdlog::info("Initializing super photon weight table done");
+}
+
+void HARMModel::init_nint_table() {
+    spdlog::info("Initializing nint table");
+
+    static const double l_b_min = std::log(consts::bthsq_min);
+    static const double d_l_b = std::log(consts::bthsq_max / consts::bthsq_min) / consts::nint;
+
+    static const double l_nu_min = std::log(consts::nu_min);
+    static const double l_nu_max = std::log(consts::nu_max);
+    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
+
+    for (int i = 0; i <= consts::nint; ++i) {
+        spdlog::debug("{} / {}", i, consts::nint);
+
+        double nint = 0.0;
+        double dndlnu_max = 0.0;
+        double b_mag = std::exp(i * d_l_b + l_b_min);
+
+        for (int j = 0; j < consts::n_e_samp; ++j) {
+            double dn = jnu_mixed::f_eval(1.0, b_mag, std::exp(j * d_l_nu + l_nu_min), f_) /
+                        (std::exp(weight_[{j}].value()) + 1.0e-100);
+
+            if (dn > dndlnu_max) {
+                dndlnu_max = dn;
+            }
+            nint += d_l_nu * dn;
+        }
+        nint *= header_.dx[1] * header_.dx[2] * header_.dx[3] * l_unit_ * l_unit_ * l_unit_ * std::numbers::sqrt2 *
+                consts::ee * consts::ee * consts::ee / (27.0 * consts::me * consts::cl * consts::cl) *
+                (1.0 / consts::hpl);
+
+        nint_[{i}] = std::log(nint);
+        dndlnu_max_[{i}] = std::log(dndlnu_max);
+    }
+
+    spdlog::info("Initializing nint table done");
 }
 
 void HARMModel::gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) const {

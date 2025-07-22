@@ -54,6 +54,10 @@ constexpr double l_sun = 3.827e33;     /* Luminousity of Sun */
 constexpr double t_sun = 5.78e3;       /* Temperature of Sun's photosphere */
 constexpr double m_bh = 4.0e6 * m_sun; /* black hole mass */
 
+constexpr int nint = 20000;
+constexpr double bthsq_min = 1.0e-4;
+constexpr double bthsq_max = 1.0e8;
+
 namespace hotcross {
 
 constexpr double min_w = 1.0e-12;
