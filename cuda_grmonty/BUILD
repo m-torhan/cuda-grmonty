@@ -15,7 +15,13 @@ package(
 
 cc_library(
     name = "consts",
-    hdrs = ["consts.hpp"]
+    hdrs = ["consts.hpp"],
+)
+
+cc_library(
+    name = "monty_rand",
+    srcs = ["monty_rand.cpp"],
+    hdrs = ["monty_rand.hpp"],
 )
 
 cc_library(
@@ -23,7 +29,7 @@ cc_library(
     hdrs = ["linalg.hpp"],
     deps = [
         ":consts",
-    ]
+    ],
 )
 
 cc_library(
@@ -32,7 +38,7 @@ cc_library(
     deps = [
         ":consts",
         ":linalg",
-    ]
+    ],
 )
 
 cc_library(
@@ -42,7 +48,7 @@ cc_library(
     deps = [
         ":consts",
         ":ndarray",
-    ]
+    ],
 )
 
 cc_library(
@@ -79,7 +85,7 @@ cc_library(
         ":mathfn",
         ":ndarray",
         "@spdlog//:spdlog",
-    ]
+    ],
 )
 
 cc_library(
@@ -89,7 +95,7 @@ cc_library(
     deps = [
         "@spdlog//:spdlog",
         "@abseil-cpp//absl/strings:string_view",
-    ]
+    ],
 )
 
 cc_library(
@@ -100,10 +106,11 @@ cc_library(
         ":consts",
         ":hotcross",
         ":jnu_mixed",
+        ":monty_rand",
         ":ndarray",
         ":tetrads",
         "@spdlog//:spdlog",
-    ]
+    ],
 )
 
 cc_binary(
@@ -115,5 +122,5 @@ cc_binary(
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@spdlog//:spdlog",
-    ]
+    ],
 )
