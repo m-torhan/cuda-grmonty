@@ -11,6 +11,7 @@
 #include <numbers>
 #include <sstream>
 #include <string>
+#include <tuple>
 
 #include "cuda_grmonty/ndarray.hpp"
 #include "spdlog/spdlog.h"
@@ -19,6 +20,7 @@
 #include "cuda_grmonty/harm_model.hpp"
 #include "cuda_grmonty/hotcross.hpp"
 #include "cuda_grmonty/jnu_mixed.hpp"
+#include "cuda_grmonty/monty_rand.hpp"
 #include "cuda_grmonty/tetrads.hpp"
 
 namespace harm {
@@ -271,7 +273,9 @@ void HARMModel::init_nint_table() {
     static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
 
     for (int i = 0; i <= consts::nint; ++i) {
-        spdlog::debug("{} / {}", i, consts::nint);
+        if (i % 1024 == 0) {
+            spdlog::debug("{} / {}", i, consts::nint);
+        }
 
         double nint = 0.0;
         double dndlnu_max = 0.0;
@@ -411,6 +415,221 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
                b_unit_;
 
     return result;
+}
+
+struct Zone HARMModel::get_zone() {
+    struct Zone zone = {.quit_flag = false};
+    int num_to_gen;
+
+    ++zone_x_2_;
+
+    if (zone_x_2_ >= static_cast<int>(header_.n[1])) {
+        zone_x_2_ = 0;
+        ++zone_x_1_;
+        if (zone_x_1_ >= static_cast<int>(header_.n[0])) {
+            num_to_gen = 1;
+            zone.quit_flag = true;
+            return zone;
+        }
+    }
+
+    auto [d_num_to_gen, dn_max] = init_zone(zone_x_1_, zone_x_2_);
+
+    zone.dn_max = dn_max;
+
+    if (std::fmod(d_num_to_gen, 1.0) > monty_rand::rand()) {
+        num_to_gen = static_cast<int>(d_num_to_gen) + 1;
+    } else {
+        num_to_gen = static_cast<int>(d_num_to_gen);
+    }
+
+    zone.x_1 = zone_x_1_;
+    zone.x_2 = zone_x_2_;
+    zone.num_to_gen = num_to_gen;
+
+    return zone;
+}
+
+struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
+    static const double l_nu_min = std::log(consts::nu_min);
+    static const double l_nu_max = std::log(consts::nu_max);
+    static const double n_l_n = l_nu_max - l_nu_min;
+
+    static double e_con[consts::n_dim][consts::n_dim];
+    static double e_cov[consts::n_dim][consts::n_dim];
+
+    Photon photon;
+
+    auto x = get_coord(zone.x_1, zone.x_2);
+    for (int i = 0; i < consts::n_dim; ++i) {
+        photon.x[i] = x[i];
+    }
+
+    auto fluid_zone = get_fluid_zone(zone.x_1, zone.x_2);
+
+    double nu;
+    double weight;
+
+    do {
+        nu = std::exp(monty_rand::rand() * n_l_n + l_nu_min);
+        weight = linear_interp_weight(nu);
+    } while (monty_rand::rand() >
+             (jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu, f_) / (weight + 1.0e-100)) / zone.dn_max);
+
+    photon.w = weight;
+    double j_max = jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, std::numbers::pi / 2.0, k2_);
+
+    double cos_th;
+    double th;
+    do {
+        cos_th = 2.0 * monty_rand::rand() - 1.0;
+        th = std::acos(cos_th);
+    } while (monty_rand::rand() >
+             (jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, th, k2_) / j_max));
+
+    double sin_th = std::sqrt(1.0 - cos_th * cos_th);
+    double phi = 2.0 * std::numbers::pi * monty_rand::rand();
+    double cos_phi = std::cos(phi);
+    double sin_phi = std::sin(phi);
+
+    double e = nu * consts::hpl / (consts::me * consts::cl * consts::cl);
+    double k_tetrad[consts::n_dim] = {
+        e,
+        e * cos_th,
+        e * sin_th * cos_phi,
+        e * sin_th * sin_phi,
+    };
+
+    double b_hat[consts::n_dim];
+
+    if (zone.quit_flag) {
+        if (fluid_zone.b > 0.0) {
+            for (int i = 0; i < consts::n_dim; ++i) {
+                b_hat[i] = fluid_zone.b_con[i] * b_unit_ / fluid_zone.b;
+            }
+        } else {
+            for (int i = 1; i < consts::n_dim; ++i) {
+                b_hat[i] = 0.0;
+            }
+            b_hat[0] = 1.0;
+        }
+        tetrads::make_tetrad(fluid_zone.u_con, b_hat, geometry_.cov[{zone.x_1, zone.x_2}], e_con, e_cov);
+        zone.quit_flag = 0;
+    }
+
+    tetrads::tetrad_to_coordinate(e_con, k_tetrad, photon.k);
+
+    k_tetrad[0] *= -1.0;
+
+    double tmp_k[consts::n_dim];
+    tetrads::tetrad_to_coordinate(e_cov, k_tetrad, tmp_k);
+
+    photon.e = -tmp_k[0];
+    photon.e_0 = -tmp_k[0];
+    photon.e_0_s = -tmp_k[0];
+    photon.l = tmp_k[3];
+    photon.tau_scatt = 0.;
+    photon.tau_abs = 0.;
+    photon.x1i = photon.x[1];
+    photon.x2i = photon.x[2];
+    photon.n_scatt = 0;
+    photon.n_e_0 = fluid_zone.n_e;
+    photon.b_0 = fluid_zone.b;
+    photon.theta_e_0 = fluid_zone.theta_e;
+
+    return photon;
+}
+
+double HARMModel::linear_interp_weight(double nu) {
+    static const double l_nu_min = std::log(consts::nu_min);
+    static const double l_nu_max = std::log(consts::nu_max);
+    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
+
+    double l_nu = std::log(nu);
+
+    double d_i = (l_nu - l_nu_min) / d_l_nu;
+    int i = static_cast<int>(d_i);
+    d_i -= i;
+
+    return std::exp((1.0 - d_i) * weight_[{i}].value() + d_i * weight_[{i + 1}]);
+}
+
+std::tuple<Photon, bool> HARMModel::make_super_photon() {
+    static Zone zone{.num_to_gen = -1};
+
+    while (zone.num_to_gen <= 0) {
+        zone = get_zone();
+    }
+
+    --zone.num_to_gen;
+
+    bool quit = zone.x_1 == static_cast<int>(header_.n[0]);
+
+    Photon photon;
+    if (!quit) {
+        photon = sample_zone_photon(zone);
+    }
+
+    return {photon, quit};
+}
+
+std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
+    static const double l_b_min = std::log(consts::bthsq_min);
+    static const double d_l_b = std::log(consts::bthsq_max / consts::bthsq_min) / consts::nint;
+
+    static const double l_nu_min = std::log(consts::nu_min);
+    static const double l_nu_max = std::log(consts::nu_max);
+    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
+
+    auto fluid_zone = get_fluid_zone(x_1, x_2);
+
+    if (fluid_zone.n_e == 0.0 || fluid_zone.theta_e < consts::theta_e_min) {
+        return {0.0, 0.0};
+    }
+
+    double l_bth = std::log(fluid_zone.b * fluid_zone.theta_e * fluid_zone.theta_e);
+
+    double d_l = (l_bth - l_b_min) / (d_l_b);
+
+    int l = static_cast<int>(d_l);
+    d_l -= l;
+
+    if (l < 0) {
+        return {0.0, 0.0};
+    }
+
+    double ninterp = 0.0;
+    double dn_max = 0.0;
+
+    if (l >= consts::nint) {
+        for (int i = 0; i <= consts::n_e_samp; ++i) {
+            double dn = jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, std::exp(x_2 * d_l_nu + l_nu_min), f_) /
+                        (std::exp(weight_[{i}].value()) + 1.0e-100);
+            if (dn > dn_max) {
+                dn_max = dn;
+            }
+
+            ninterp += d_l_nu * dn;
+        }
+    } else if (!std::isinf(nint_[{l}].value()) && !std::isinf(nint_[{l + 1}].value())) {
+        ninterp = std::exp((1.0 - d_l) * nint_[{l}].value() + d_l * nint_[{l + 1}].value());
+        dn_max = std::exp((1.0 - d_l) * dndlnu_max_[{l}].value() + d_l * dndlnu_max_[{l + 1}].value());
+    }
+
+    double k2 = jnu_mixed::k2_eval(fluid_zone.theta_e, k2_);
+
+    if (k2 == 0.0) {
+        return {0.0, 0.0};
+    }
+
+    double nz = geometry_.det[{x_1, x_2}].value() * fluid_zone.n_e * fluid_zone.b * fluid_zone.theta_e *
+                fluid_zone.theta_e * ninterp / k2;
+
+    if (nz > photon_n_ * std::log(consts::nu_max / consts::nu_min)) {
+        return {0.0, 0.0};
+    }
+
+    return {nz, dn_max};
 }
 
 struct BLCoord HARMModel::get_bl_coord(double x[consts::n_dim]) const {
