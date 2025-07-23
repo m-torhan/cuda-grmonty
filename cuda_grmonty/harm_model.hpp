@@ -8,6 +8,7 @@
 
 #include <array>
 #include <string>
+#include <tuple>
 
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/ndarray.hpp"
@@ -71,6 +72,33 @@ struct FluidZone {
     double b_con[consts::n_dim];
 };
 
+struct Zone {
+    int x_1;
+    int x_2;
+    int num_to_gen;
+    double dn_max;
+    bool quit_flag;
+};
+
+struct Photon {
+    double x[consts::n_dim];
+    double k[consts::n_dim];
+    double dKdlam[consts::n_dim];
+    double w;
+    double e;
+    double l;
+    double x1i;
+    double x2i;
+    double tau_abs;
+    double tau_scatt;
+    double n_e_0;
+    double theta_e_0;
+    double b_0;
+    double e_0;
+    double e_0_s;
+    int n_scatt;
+};
+
 class HARMModel {
 public:
     explicit HARMModel(int photon_n, double mass_unit);
@@ -102,6 +130,19 @@ public:
     void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
 
     struct FluidZone get_fluid_zone(int x_1, int x_2) const;
+
+    /**
+     * @brief Return the next zone and the number of superphotons that need to be generated in it.
+     */
+    struct Zone get_zone();
+
+    struct Photon sample_zone_photon(struct Zone &zone);
+
+    double linear_interp_weight(double nu);
+
+    std::tuple<struct Photon, bool> make_super_photon();
+
+    std::tuple<double, double> init_zone(int x_1, int x_2) const;
 
     struct BLCoord get_bl_coord(double x[consts::n_dim]) const;
 
@@ -136,6 +177,10 @@ private:
     double theta_e_unit_;
     double n_e_unit_;
     double max_tau_scatt_;
+
+    int zone_x_1_ = 0;
+    int zone_x_2_ = -1;
+    bool zone_flag_ = 0;
 
     struct Geometry geometry_;
     ndarray::NDArray<double> hotcross_table_ =

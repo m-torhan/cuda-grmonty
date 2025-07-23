@@ -48,6 +48,28 @@ void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2
     spdlog::info("Initializing HARM model emission tables done");
 }
 
+double synch(double nu, double n_e, double theta_e, double b, double theta, const ndarray::NDArray<double> &k2_table) {
+    if (theta_e < consts::theta_e_min) {
+        return 0.0;
+    }
+
+    double k2 = k2_eval(theta_e, k2_table);
+    double nu_c = consts::ee * b / (2.0 * std::numbers::pi * consts::me * consts::cl);
+    double sin_th = std::sin(theta);
+    double nu_s = (2.0 / 9.0) * nu_c * theta_e * theta_e * sin_th;
+
+    if (nu > 1.0e12 * nu_s) {
+        return 0.0;
+    }
+
+    double x = nu / nu_s;
+    double xp = std::pow(x, 1.0 / 3.0);
+    double xx = std::sqrt(x) + consts::jnu::cst * std::sqrt(xp);
+    double f = xx * xx;
+    return (std::numbers::sqrt2 * std::numbers::pi * consts::ee * consts::ee * n_e * nu_s / (3.0 * consts::cl * k2)) *
+           f * std::exp(-xp);
+}
+
 double k2_eval(double theta_e, const ndarray::NDArray<double> &k2_table) {
     if (theta_e < consts::theta_e_min) {
         return 0.0;
