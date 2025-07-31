@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <chrono>
 #include <string>
 
 #include "absl/flags/flag.h"
@@ -11,9 +12,10 @@
 #include "spdlog/spdlog.h"
 
 #include "cuda_grmonty/harm_model.hpp"
+#include "cuda_grmonty/monty_rand.hpp"
 #include "cuda_grmonty/parse_verbosity.hpp"
 
-// Define cli args
+/* Define cli args */
 ABSL_FLAG(int, photon_n, 5000000, "Estimate of photon number");
 ABSL_FLAG(double, mass_unit, 4e19, "Mass unit");
 ABSL_FLAG(std::string, harm_dump_path, "", "HARM dump file path");
@@ -39,6 +41,29 @@ int main(int argc, char *argv[]) {
     harm_model.read_file(harm_dump_path);
 
     harm_model.init();
+
+    monty_rand::init(123);
+
+    auto start = std::chrono::system_clock::now();
+    int n_super_photon_created = 0;
+
+    spdlog::info("Starting main loop");
+
+    while (true) {
+        auto [photon, quit] = harm_model.make_super_photon();
+        if (quit) {
+            break;
+        }
+        harm_model.track_super_photon(photon);
+
+        ++n_super_photon_created;
+
+        if ((n_super_photon_created % 100) == 0) {
+            std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
+            double rate = n_super_photon_created / elapsed_seconds.count();
+            spdlog::debug("Rate {} ph/s", rate);
+        }
+    }
 
     return 0;
 }

@@ -142,8 +142,9 @@ cc_binary(
     name = "main",
     srcs = ["main.cpp"],
     deps = [
-        ":parse_verbosity",
         ":harm_model",
+        ":monty_rand",
+        ":parse_verbosity",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@spdlog//:spdlog",

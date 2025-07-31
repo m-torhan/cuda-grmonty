@@ -72,6 +72,16 @@ struct FluidZone {
     double b_con[consts::n_dim];
 };
 
+struct FluidParams {
+    double n_e;
+    double theta_e;
+    double b;
+    double u_con[consts::n_dim];
+    double u_cov[consts::n_dim];
+    double b_con[consts::n_dim];
+    double b_cov[consts::n_dim];
+};
+
 struct Zone {
     int x_1;
     int x_2;
@@ -83,7 +93,7 @@ struct Zone {
 struct Photon {
     double x[consts::n_dim];
     double k[consts::n_dim];
-    double dKdlam[consts::n_dim];
+    double dkdlam[consts::n_dim];
     double w;
     double e;
     double l;
@@ -97,6 +107,22 @@ struct Photon {
     double e_0;
     double e_0_s;
     int n_scatt;
+};
+
+struct Spectrum {
+    double dNdlE;
+    double dEdlE;
+    double nph;
+    double nscatt;
+    double X1iav;
+    double X2isq;
+    double X3fsq;
+    double tau_abs;
+    double tau_scatt;
+    double ne0;
+    double thetae0;
+    double b0;
+    double E0;
 };
 
 class HARMModel {
@@ -125,11 +151,13 @@ public:
 
     void init_nint_table();
 
-    void gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) const;
+    void gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcon) const;
 
-    void gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
+    void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
 
     struct FluidZone get_fluid_zone(int x_1, int x_2) const;
+
+    struct FluidParams get_fluid_params(const double (&x)[consts::n_dim], const ndarray::NDArray<double> &g_cov) const;
 
     /**
      * @brief Return the next zone and the number of superphotons that need to be generated in it.
@@ -142,11 +170,41 @@ public:
 
     std::tuple<struct Photon, bool> make_super_photon();
 
+    void track_super_photon(struct Photon &photon);
+
+    void scatter_super_photon(struct Photon &photon,
+                              struct Photon &photon_2,
+                              const struct FluidParams &fluid_params,
+                              const ndarray::NDArray<double> &g_cov,
+                              double b_unit) const;
+
+    void
+    sample_scattered_photon(const double (&k)[consts::n_dim], double (&p)[consts::n_dim], double (&kp)[consts::n_dim]);
+
+    void push_photon(struct Photon &photon, double dl, int n);
+
+    void record_super_photon(const struct Photon &photon);
+
     std::tuple<double, double> init_zone(int x_1, int x_2) const;
 
-    struct BLCoord get_bl_coord(double x[consts::n_dim]) const;
+    double bias_func(double t_e, double w) const;
 
-    std::array<double, 4> get_coord(int x_1, int x_2) const;
+    std::tuple<int, int, double, double> x_to_ij(const double (&x)[consts::n_dim]) const;
+
+    void get_connection(const double (&x)[consts::n_dim], double (&lconn)[consts::n_dim][consts::n_dim][consts::n_dim]);
+
+    void
+    init_dkdlam(const double (&x)[consts::n_dim], const double (&k_con)[consts::n_dim], double (&d_k)[consts::n_dim]);
+
+    bool stop_criterion(struct Photon &photon) const;
+
+    bool record_criterion(const struct Photon &photon) const;
+
+    double step_size(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim]);
+
+    struct BLCoord get_bl_coord(const double (&x)[consts::n_dim]) const;
+
+    void get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const;
 
     const struct Header *get_header() const { return &header_; }
 
@@ -166,6 +224,13 @@ private:
 
     double bias_norm_;
     double rh_;
+
+    double n_scatt_;
+    double n_super_photon_recorded_;
+
+    /* spectral bin parameters */
+    double d_l_e_ = 0.25;              /* bin width */
+    double l_e_0_ = std::log(1.0e-12); /* location of first bin, in electron rest-mass units */
 
     int photon_n_;
     double mass_unit_;
@@ -190,6 +255,8 @@ private:
     ndarray::NDArray<double> weight_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
     ndarray::NDArray<double> nint_ = ndarray::NDArray<double>({consts::nint + 1});
     ndarray::NDArray<double> dndlnu_max_ = ndarray::NDArray<double>({consts::nint + 1});
+
+    struct Spectrum spectrum_[consts::n_th_bins][consts::n_e_bins];
 };
 
 }; /* namespace harm */

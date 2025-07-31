@@ -117,8 +117,8 @@ struct Interval {
     bool operator<(const Interval &other) const { return error < other.error; /* max-heap: largest error first */ }
 };
 
-double gauss_kronrod_61(const std::function<double(double)> &f, double a, double b, double eps_abs, double eps_rel,
-                        int max_intervals) {
+double gauss_kronrod_61(
+    const std::function<double(double)> &f, double a, double b, double eps_abs, double eps_rel, int max_intervals) {
     std::priority_queue<Interval> queue;
 
     auto [I, err] = qk61(f, a, b);
