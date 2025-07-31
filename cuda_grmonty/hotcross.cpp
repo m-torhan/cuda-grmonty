@@ -71,8 +71,8 @@ double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray
         return total_compton_cross_num(w, theta_e);
     }
 
-    const double l_w = std::log(w);
-    const double l_t = std::log(theta_e);
+    const double l_w = std::log10(w);
+    const double l_t = std::log10(theta_e);
     int i = static_cast<int>((l_w - l_min_w) / d_l_w);
     int j = static_cast<int>((l_t - l_min_t) / d_l_t);
     double d_i = (l_w - l_min_w) / d_l_w - i;
@@ -136,7 +136,7 @@ static double dnd_gamma_e(double theta_e, double gamma_e) {
     double k2f;
 
     if (theta_e > 1.0e-2) {
-        k2f = mathfn::bessel_Kn(2, 1.0 / theta_e) * std::exp(1.0 / theta_e);
+        k2f = mathfn::bessel_k_n(2, 1.0 / theta_e) * std::exp(1.0 / theta_e);
     } else {
         k2f = std::sqrt(std::numbers::pi * theta_e / 2.0);
     }
@@ -146,7 +146,6 @@ static double dnd_gamma_e(double theta_e, double gamma_e) {
 
 static double boostcross(double w, double mu_e, double gamma_e) {
     double we, boostcross, v;
-    double hc_klein_nishina(double we);
 
     /* energy in electron rest frame */
     v = sqrt(gamma_e * gamma_e - 1.0) / gamma_e;
@@ -155,7 +154,7 @@ static double boostcross(double w, double mu_e, double gamma_e) {
     boostcross = hc_klein_nishina(we) * (1.0 - mu_e * v);
 
     if (std::isnan(boostcross)) {
-        spdlog::error("boostcross is nan: %f %f %f\n", w, mu_e, gamma_e);
+        spdlog::error("boostcross({}, {}, {}) is nan", w, mu_e, gamma_e);
     }
 
     return boostcross;
