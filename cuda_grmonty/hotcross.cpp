@@ -11,6 +11,7 @@
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/hotcross.hpp"
 #include "cuda_grmonty/mathfn.hpp"
+#include "cuda_grmonty/ndarray.hpp"
 
 namespace hotcross {
 
@@ -49,6 +50,40 @@ void init_table(ndarray::NDArray<double> &table) {
     }
 
     spdlog::info("Initializing HARM model hotcross done");
+}
+
+double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double> &hotcross_table) {
+    static const double l_min_w = std::log10(consts::hotcross::min_w);
+    static const double l_min_t = std::log10(consts::hotcross::min_t);
+    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
+    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
+
+    if (w * theta_e < 1.0e-6) {
+        return consts::sigma_thomson;
+    }
+
+    if (theta_e < consts::hotcross::min_t) {
+        return hc_klein_nishina(w) * consts::sigma_thomson;
+    }
+
+    if (w <= consts::hotcross::min_w || w >= consts::hotcross::max_w || theta_e <= consts::hotcross::min_t ||
+        theta_e >= consts::hotcross::max_t) {
+        return total_compton_cross_num(w, theta_e);
+    }
+
+    const double l_w = std::log(w);
+    const double l_t = std::log(theta_e);
+    int i = static_cast<int>((l_w - l_min_w) / d_l_w);
+    int j = static_cast<int>((l_t - l_min_t) / d_l_t);
+    double d_i = (l_w - l_min_w) / d_l_w - i;
+    double d_j = (l_t - l_min_t) / d_l_t - j;
+
+    double l_cross = (1.0 - d_i) * (1.0 - d_j) * hotcross_table[{i, j}].value() +
+                     d_i * (1.0 - d_j) * hotcross_table[{i + 1, j}].value() +
+                     (1.0 - d_i) * d_j * hotcross_table[{i, j + 1}].value() +
+                     d_i * d_j * hotcross_table[{i + 1, j + 1}].value();
+
+    return std::pow(10, l_cross);
 }
 
 double total_compton_cross_num(double w, double theta_e) {
@@ -118,12 +153,6 @@ static double boostcross(double w, double mu_e, double gamma_e) {
     we = w * gamma_e * (1.0 - mu_e * v);
 
     boostcross = hc_klein_nishina(we) * (1.0 - mu_e * v);
-
-    // if (boostcross > 2) {
-    //     fprintf(stderr, "w,mue,gammae: %g %g %g\n", w, mu_e, gamma_e);
-    //     fprintf(stderr, "v,we, boostcross: %g %g %g\n", v, we, boostcross);
-    //     fprintf(stderr, "kn: %g %g %g\n", v, we, boostcross);
-    // }
 
     if (std::isnan(boostcross)) {
         spdlog::error("boostcross is nan: %f %f %f\n", w, mu_e, gamma_e);

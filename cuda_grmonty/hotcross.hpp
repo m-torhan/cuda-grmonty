@@ -15,4 +15,6 @@ namespace hotcross {
  */
 void init_table(ndarray::NDArray<double> &table);
 
+double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double> &hotcross_table);
+
 }; /* namespace hotcross */
