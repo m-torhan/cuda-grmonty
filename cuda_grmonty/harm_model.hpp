@@ -151,9 +151,9 @@ public:
 
     void init_nint_table();
 
-    void gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcon) const;
+    void gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_con) const;
 
-    void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcov) const;
+    void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_cov) const;
 
     struct FluidZone get_fluid_zone(int x_1, int x_2) const;
 

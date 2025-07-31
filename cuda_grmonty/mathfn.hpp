@@ -16,6 +16,6 @@ namespace mathfn {
  *
  * @throws std::invalid_argument if x <= 0 or n < 0
  */
-double bessel_Kn(int n, double x);
+double bessel_k_n(int n, double x);
 
 }; /* namespace mathfn */

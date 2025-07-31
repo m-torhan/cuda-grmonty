@@ -42,7 +42,7 @@ void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
         double t = std::exp(i * d_l_t + l_min_t);
-        k2[{i}] = std::log(mathfn::bessel_Kn(2, 1.0 / t));
+        k2[{i}] = std::log(mathfn::bessel_k_n(2, 1.0 / t));
     }
 
     spdlog::info("Initializing HARM model emission tables done");
