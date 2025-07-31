@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -13,7 +14,6 @@
 #include <string>
 #include <tuple>
 
-#include "cuda_grmonty/ndarray.hpp"
 #include "spdlog/spdlog.h"
 
 #include "cuda_grmonty/consts.hpp"
@@ -21,9 +21,16 @@
 #include "cuda_grmonty/hotcross.hpp"
 #include "cuda_grmonty/jnu_mixed.hpp"
 #include "cuda_grmonty/monty_rand.hpp"
+#include "cuda_grmonty/ndarray.hpp"
+#include "cuda_grmonty/proba.hpp"
+#include "cuda_grmonty/radiation.hpp"
 #include "cuda_grmonty/tetrads.hpp"
 
 namespace harm {
+
+static double interp_scalar(ndarray::NDArray<double> var, int i, int j, const double (&coeff)[consts::n_dim]);
+
+static void boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]);
 
 HARMModel::HARMModel(int photon_n, double mass_unit) : photon_n_(photon_n), mass_unit_(mass_unit) {
     l_unit_ = consts::g_newt * consts::m_bh / (consts::cl * consts::cl);
@@ -206,10 +213,11 @@ void HARMModel::init_geometry() {
     for (int x_1 = 0; x_1 < static_cast<int>(header_.n[0]); ++x_1) {
         spdlog::debug("{} / {}", x_1, header_.n[0]);
         for (int x_2 = 0; x_2 < static_cast<int>(header_.n[1]); ++x_2) {
-            std::array<double, consts::n_dim> x = get_coord(x_1, x_2);
+            double x[consts::n_dim];
+            get_coord(x_1, x_2, x);
 
-            gcov_func(x.data(), geometry_.cov[{x_1, x_2}]);
-            gcon_func(x.data(), geometry_.con[{x_1, x_2}]);
+            gcov_func(x, geometry_.cov[{x_1, x_2}]);
+            gcon_func(x, geometry_.con[{x_1, x_2}]);
 
             geometry_.det[{x_1, x_2}] = std::sqrt(std::abs(geometry_.cov[{x_1, x_2}].det()));
         }
@@ -301,7 +309,7 @@ void HARMModel::init_nint_table() {
     spdlog::info("Initializing nint table done");
 }
 
-void HARMModel::gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcon) const {
+void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcon) const {
     gcon = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
@@ -327,7 +335,7 @@ void HARMModel::gcon_func(double x[consts::n_dim], ndarray::NDArray<double> &&gc
     gcon[{3, 3}] = irho2 / (sin_theta * sin_theta);
 }
 
-void HARMModel::gcov_func(double x[consts::n_dim], ndarray::NDArray<double> &&gcov) const {
+void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcov) const {
     gcov = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
@@ -417,8 +425,86 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
     return result;
 }
 
+struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
+                                               const ndarray::NDArray<double> &g_cov) const {
+    struct FluidParams fluid_params;
+
+    if (x[1] < header_.x_start[1] || x[1] > header_.x_stop[1] || x[2] < header_.x_start[2] ||
+        x[2] > header_.x_stop[2]) {
+        fluid_params.n_e = 0.0;
+        return fluid_params;
+    }
+
+    auto [i, j, del_i, del_j] = x_to_ij(x);
+
+    double coeff[consts::n_dim] = {
+        (1.0 - del_i) * (1.0 - del_j),
+        (1.0 - del_i) * del_j,
+        del_i * (1.0 - del_j),
+        del_i * del_j,
+    };
+
+    double rho = interp_scalar(data_.b_1, i, j, coeff);
+    double uu = interp_scalar(data_.u, i, j, coeff);
+
+    fluid_params.n_e = rho * n_e_unit_;
+    fluid_params.theta_e = uu / rho * theta_e_unit_;
+
+    double bp[consts::n_dim] = {
+        0.0,
+        interp_scalar(data_.b_1, i, j, coeff),
+        interp_scalar(data_.b_2, i, j, coeff),
+        interp_scalar(data_.b_3, i, j, coeff),
+    };
+
+    double v_con[consts::n_dim] = {
+        0.0,
+        interp_scalar(data_.u_1, i, j, coeff),
+        interp_scalar(data_.u_2, i, j, coeff),
+        interp_scalar(data_.u_3, i, j, coeff),
+    };
+
+    ndarray::NDArray<double> g_con({consts::n_dim, consts::n_dim});
+
+    gcon_func(x, g_con[{}]);
+
+    double v_dot_v = 0.0;
+
+    for (int i = 1; i < consts::n_dim; ++i) {
+        for (int j = 1; j < consts::n_dim; ++j) {
+            v_dot_v += g_cov[{i, j}].value() * v_con[i] * v_con[j];
+        }
+    }
+
+    double v_fac = std::sqrt(-1.0 / g_con[{0, 0}].value() * (1.0 + std::abs(v_dot_v)));
+
+    fluid_params.u_con[0] = -v_fac * g_con[{0, 0}].value();
+
+    for (int i = 1; i < consts::n_dim; ++i) {
+        fluid_params.u_con[i] = v_con[i] - v_fac * g_con[{0, i}].value();
+    }
+    tetrads::lower(fluid_params.u_con, g_cov, fluid_params.u_cov);
+
+    double u_dot_bp = 0.0;
+    for (int i = 1; i < consts::n_dim; ++i) {
+        u_dot_bp += fluid_params.u_cov[i] * bp[i];
+    }
+    fluid_params.b_con[0] = u_dot_bp;
+    for (int i = 1; i < consts::n_dim; ++i) {
+        fluid_params.b_con[i] = (bp[i] + fluid_params.u_con[i] * u_dot_bp) / fluid_params.u_con[0];
+    }
+    tetrads::lower(fluid_params.b_con, g_cov, fluid_params.b_cov);
+
+    fluid_params.b =
+        std::sqrt(fluid_params.b_con[0] * fluid_params.b_cov[0] + fluid_params.b_con[1] * fluid_params.b_cov[1] +
+                  fluid_params.b_con[2] * fluid_params.b_cov[2] + fluid_params.b_con[3] * fluid_params.b_cov[3]) *
+        b_unit_;
+
+    return fluid_params;
+}
+
 struct Zone HARMModel::get_zone() {
-    struct Zone zone = {.quit_flag = false};
+    struct Zone zone = {.quit_flag = true};
     int num_to_gen;
 
     ++zone_x_2_;
@@ -428,7 +514,7 @@ struct Zone HARMModel::get_zone() {
         ++zone_x_1_;
         if (zone_x_1_ >= static_cast<int>(header_.n[0])) {
             num_to_gen = 1;
-            zone.quit_flag = true;
+            zone.x_1 = static_cast<int>(header_.n[0]);
             return zone;
         }
     }
@@ -460,7 +546,8 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
 
     Photon photon;
 
-    auto x = get_coord(zone.x_1, zone.x_2);
+    double x[consts::n_dim];
+    get_coord(zone.x_1, zone.x_2, x);
     for (int i = 0; i < consts::n_dim; ++i) {
         photon.x[i] = x[i];
     }
@@ -517,6 +604,13 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
         zone.quit_flag = 0;
     }
 
+    // spdlog::debug("e_con\n{} {} {} {}\n{} {} {} {}\n{} {} {} {}\n{} {} {} {}",
+    //               e_con[0][0], e_con[0][1], e_con[0][2], e_con[0][3],
+    //               e_con[1][0], e_con[1][1], e_con[1][2], e_con[1][3],
+    //               e_con[2][0], e_con[2][1], e_con[2][2], e_con[2][3],
+    //               e_con[3][0], e_con[3][1], e_con[3][2], e_con[3][3]
+    //           );
+    // spdlog::debug("k_tetrad {} {} {} {}", k_tetrad[0], k_tetrad[1], k_tetrad[2], k_tetrad[3]);
     tetrads::tetrad_to_coordinate(e_con, k_tetrad, photon.k);
 
     k_tetrad[0] *= -1.0;
@@ -571,6 +665,437 @@ std::tuple<Photon, bool> HARMModel::make_super_photon() {
     }
 
     return {photon, quit};
+}
+
+void HARMModel::track_super_photon(struct Photon &photon) {
+    if (std::isnan(photon.x[0]) || std::isnan(photon.x[1]) || std::isnan(photon.x[2]) || std::isnan(photon.x[3]) ||
+        std::isnan(photon.k[0]) || std::isnan(photon.k[1]) || std::isnan(photon.k[2]) || std::isnan(photon.k[3]) ||
+        photon.w == 0.0) {
+        spdlog::error("Invalid photon provided");
+        return;
+    }
+
+    static const double d_tau_k =
+        2.0 * std::numbers::pi * l_unit_ / (consts::me * consts::cl * consts::cl / consts::hbar);
+
+    ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+
+    gcov_func(photon.x, g_cov[{}]);
+    auto fluid_params = get_fluid_params(photon.x, g_cov);
+
+    double theta =
+        radiation::bk_angle(photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, b_unit_);
+    double nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
+    double alpha_scatti = radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
+    double alpha_absi =
+        radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+    double bi = bias_func(fluid_params.theta_e, photon.w);
+
+    init_dkdlam(photon.x, photon.k, photon.dkdlam);
+
+    int n_step = 0;
+
+    // spdlog::debug("track loop");
+    // spdlog::debug("fluid params {} {} {} {} {} {} {}", fluid_params.theta_e, fluid_params.n_e, fluid_params.b,
+    //               fluid_params.u_cov[0], fluid_params.u_cov[0], fluid_params.u_cov[0], fluid_params.u_cov[0]);
+    // spdlog::debug("photon.x {} {} {} {}", n_step, photon.x[0], photon.x[1], photon.x[2], photon.x[3]);
+    // spdlog::debug("photon.k {} {} {} {}", n_step, photon.k[0], photon.k[1], photon.k[2], photon.k[3]);
+    while (!stop_criterion(photon)) {
+        // spdlog::debug("step {} pos {} {} {} {}", n_step, photon.x[0], photon.x[1], photon.x[2], photon.x[3]);
+        double x[consts::n_dim];
+        double k[consts::n_dim];
+        double d_k[consts::n_dim];
+        double e_0 = photon.e_0_s;
+
+        std::copy(std::begin(photon.x), std::end(photon.x), std::begin(x));
+        std::copy(std::begin(photon.k), std::end(photon.k), std::begin(k));
+        std::copy(std::begin(photon.dkdlam), std::end(photon.dkdlam), std::begin(d_k));
+
+        double dl = step_size(photon.x, photon.k);
+
+        /* step the geodesic */
+        push_photon(photon, dl, 0);
+
+        if (stop_criterion(photon)) {
+            break;
+        }
+
+        /* allow photon to interact with matter */
+        ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+        gcov_func(photon.x, g_cov[{}]);
+        auto fluid_params = get_fluid_params(photon.x, g_cov);
+
+        spdlog::debug("{} {} {}", alpha_absi, alpha_scatti, fluid_params.n_e);
+        if (alpha_absi > 0.0 || alpha_scatti > 0.0 || fluid_params.n_e > 0.0) {
+            bool bound_flag = false;
+            double theta;
+            double nu;
+
+            if (fluid_params.n_e == 0.0) {
+                bound_flag = true;
+            }
+
+            if (!bound_flag) {
+                theta = radiation::bk_angle(
+                    photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, b_unit_);
+                nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
+
+                if (std::isnan(nu)) {
+                    spdlog::error("nu is nan");
+                }
+            }
+
+            double d_tau_scatt;
+            double d_tau_abs;
+            double bias;
+
+            if (bound_flag || nu < 0.0) {
+                d_tau_scatt = 0.5 * alpha_scatti + d_tau_k * dl;
+                d_tau_abs = 0.5 * alpha_absi * d_tau_k * dl;
+                alpha_scatti = 0.0;
+                alpha_absi = 0.0;
+                bias = 0.0;
+                bi = 0.0;
+            } else {
+                double alpha_scattf =
+                    radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
+                d_tau_scatt = 0.5 * (alpha_scatti + alpha_scattf) * d_tau_k * dl;
+                alpha_scatti = alpha_scattf;
+
+                double alpha_absf =
+                    radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+                d_tau_abs = 0.5 * (alpha_absi + alpha_absf) * d_tau_k * dl;
+                alpha_absi = alpha_absf;
+
+                double bf = bias_func(fluid_params.theta_e, photon.w);
+                bias = 0.5 * (bi + bf);
+                bi = bf;
+            }
+
+            double x1 = -std::log(monty_rand::rand());
+
+            struct Photon photon_2;
+            photon_2.w = photon.w / bias;
+
+            if (bias + d_tau_scatt > x1 && photon_2.w > consts::weight_min) {
+                double frac = x1 / (bias + d_tau_scatt);
+
+                /* apply absorption until scattering event */
+                d_tau_abs *= frac;
+
+                if (d_tau_abs > 100) {
+                    /* this photon has been absorbed before scattering */
+                    return;
+                }
+
+                d_tau_scatt *= frac;
+                double d_tau = d_tau_abs + d_tau_scatt;
+                if (d_tau_abs < 1.0e-3) {
+                    photon.w = (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
+                } else {
+                    photon.w *= std::exp(-d_tau);
+                }
+
+                /* interpolate position and wave vector to scattering event */
+                push_photon(photon_2, dl * frac, 0);
+
+                std::copy(std::begin(x), std::end(x), std::begin(photon.x));
+                std::copy(std::begin(k), std::end(k), std::begin(photon.k));
+                std::copy(std::begin(d_k), std::end(d_k), std::begin(photon.dkdlam));
+                photon.e_0_s = e_0;
+
+                gcov_func(photon.x, g_cov[{}]);
+
+                auto fluid_params = get_fluid_params(photon.x, g_cov);
+
+                if (fluid_params.n_e > 0.0) {
+                    scatter_super_photon(photon, photon_2, fluid_params, g_cov, b_unit_);
+
+                    if (photon.w < 1.0e-100) {
+                        /* must have been a problem popping k back onto light cone */
+                        return;
+                    }
+
+                    track_super_photon(photon_2);
+                }
+
+                theta = radiation::bk_angle(
+                    photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, b_unit_);
+                nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
+
+                if (nu < 0.0) {
+                    alpha_scatti = 0.0;
+                    alpha_absi = 0.0;
+                } else {
+                    alpha_scatti =
+                        radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
+                    alpha_absi = radiation::alpha_inv_abs(
+                        nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+                }
+                bi = bias_func(fluid_params.theta_e, photon.w);
+
+                photon.tau_abs += d_tau_abs;
+                photon.tau_scatt += d_tau_scatt;
+            } else {
+                if (d_tau_abs > 100) {
+                    /* this photon has been absorbed */
+                    return;
+                }
+                photon.tau_abs += d_tau_abs;
+                photon.tau_scatt += d_tau_scatt;
+
+                double d_tau = d_tau_abs + d_tau_scatt;
+                if (d_tau < 1.0e-3) {
+                    photon.w *= (1. - d_tau / 24. * (24. - d_tau * (12. - d_tau * (4. - d_tau))));
+                } else {
+                    photon.w *= std::exp(-d_tau);
+                }
+            }
+        }
+
+        ++n_step;
+
+        if (n_step > consts::max_n_step) {
+            break;
+        }
+    }
+
+    if (record_criterion(photon) && n_step < consts::max_n_step) {
+        record_super_photon(photon);
+    }
+}
+
+void HARMModel::scatter_super_photon(struct Photon &photon,
+                                     struct Photon &photon_2,
+                                     const struct FluidParams &fluid_params,
+                                     const ndarray::NDArray<double> &g_cov,
+                                     double b_unit) const {
+    if (photon.k[0] > 1.0e5 || photon.k[0] < 0.0 || std::isnan(photon.k[0]) || std::isnan(photon.k[1]) ||
+        std::isnan(photon.k[3])) {
+        photon.k[0] = std::abs(photon.k[0]);
+        photon.w = 0.0;
+        return;
+    }
+
+    double b_hat_con[consts::n_dim];
+
+    if (fluid_params.b > 0.0) {
+        for (int i = 0; i < consts::n_dim; ++i) {
+            b_hat_con[i] = fluid_params.b_con[i] / (fluid_params.b / b_unit);
+        }
+    } else {
+        for (int i = 0; i < consts::n_dim; ++i) {
+            b_hat_con[i] = 0.0;
+        }
+        b_hat_con[1] = 1.0;
+    }
+
+    double e_con[consts::n_dim][consts::n_dim];
+    double e_cov[consts::n_dim][consts::n_dim];
+
+    /* local tetrad */
+    tetrads::make_tetrad(fluid_params.u_con, b_hat_con, g_cov, e_con, e_cov);
+
+    double k_tetrad[consts::n_dim];
+
+    tetrads::coordinate_to_tetrad(e_cov, photon.k, k_tetrad);
+
+    if (k_tetrad[0] > 1.0e5 || k_tetrad[0] < 0.0 || std::isnan(k_tetrad[1])) {
+        return;
+    }
+
+    double p[consts::n_dim];
+    proba::sample_electron_distr_p(k_tetrad, p, fluid_params.theta_e);
+}
+
+void HARMModel::sample_scattered_photon(const double (&k)[consts::n_dim],
+                                        double (&p)[consts::n_dim],
+                                        double (&kp)[consts::n_dim]) {
+    double ke[consts::n_dim];
+
+    boost(k, p, ke);
+
+    double k0p;
+    double c_th;
+
+    if (ke[0] > 1.0e-4) {
+        k0p = proba::sample_klein_nishina(ke[0]);
+        c_th = 1.0 - 1.0 / k0p + 1.0 / ke[0];
+    } else {
+        k0p = ke[0];
+        c_th = proba::sample_thomson();
+    }
+    double s_th = std::sqrt(std::abs(1.0 - c_th * c_th));
+
+    double v0x = ke[1] / ke[0];
+    double v0y = ke[2] / ke[0];
+    double v0z = ke[3] / ke[0];
+
+    auto [n0x, n0y, n0z] = proba::sample_rand_dir();
+
+    double n0dotv0 = v0x * n0x + v0y * n0y + v0z * n0z;
+
+    /* unit vector 2 */
+    double v1x = n0x - (n0dotv0)*v0x;
+    double v1y = n0y - (n0dotv0)*v0y;
+    double v1z = n0z - (n0dotv0)*v0z;
+    double v1 = std::sqrt(v1x * v1x + v1y * v1y + v1z * v1z);
+    v1x /= v1;
+    v1y /= v1;
+    v1z /= v1;
+
+    /* find one more unit vector using cross product;
+       this guy is automatically normalized */
+    double v2x = v0y * v1z - v0z * v1y;
+    double v2y = v0z * v1x - v0x * v1z;
+    double v2z = v0x * v1y - v0y * v1x;
+
+    /* now resolve new momentum vector along unit vectors */
+    /* create a four-vector $p$ */
+    /* solve for orientation of scattered photon */
+
+    /* find phi for new photon */
+    double phi = 2.0 * std::numbers::pi * monty_rand::rand();
+    double s_phi = std::sin(phi);
+    double c_phi = std::cos(phi);
+
+    p[1] *= -1.;
+    p[2] *= -1.;
+    p[3] *= -1.;
+
+    double dir1 = c_th * v0x + s_th * (c_phi * v1x + s_phi * v2x);
+    double dir2 = c_th * v0y + s_th * (c_phi * v1y + s_phi * v2y);
+    double dir3 = c_th * v0z + s_th * (c_phi * v1z + s_phi * v2z);
+
+    double kpe[consts::n_dim] = {
+        k0p,
+        k0p * dir1,
+        k0p * dir2,
+        k0p * dir3,
+    };
+
+    /* transform k back to lab frame */
+    boost(kpe, p, kp);
+}
+
+void HARMModel::push_photon(struct Photon &photon, double dl, int n) {
+    if (photon.x[1] < header_.x_start[1]) {
+        return;
+    }
+
+    double x_cpy[consts::n_dim];
+    double k_cpy[consts::n_dim];
+    double dk_cpy[consts::n_dim];
+
+    std::copy(std::begin(photon.x), std::end(photon.x), std::begin(x_cpy));
+    std::copy(std::begin(photon.k), std::end(photon.k), std::begin(k_cpy));
+    std::copy(std::begin(photon.dkdlam), std::end(photon.dkdlam), std::begin(dk_cpy));
+
+    double dl_2 = 0.5 * dl;
+    double k[consts::n_dim];
+
+    for (int i = 0; i < consts::n_dim; ++i) {
+        double dk = photon.dkdlam[i] * dl_2;
+        photon.k[i] += dk;
+        k[i] = photon.k[i] + dk;
+        photon.x[i] += photon.k[i] * dl;
+    }
+
+    double lconn[consts::n_dim][consts::n_dim][consts::n_dim];
+
+    get_connection(photon.x, lconn);
+
+    double err;
+    int iter = 0;
+
+    do {
+        ++iter;
+
+        double k_cont[consts::n_dim];
+        std::copy(std::begin(photon.k), std::end(photon.k), std::begin(k_cont));
+
+        err = 0.0;
+
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon.dkdlam[i] =
+                -2.0 *
+                (k_cont[0] * (lconn[i][0][1] * k_cont[1] + lconn[i][0][2] * k_cont[2] + lconn[i][0][3] * k_cont[3]) +
+                 k_cont[1] * (lconn[i][1][2] * k_cont[2] + lconn[i][1][3] * k_cont[3]) +
+                 lconn[i][2][3] * k_cont[2] * k_cont[3]);
+            photon.dkdlam[i] -= (lconn[i][0][0] * k_cont[0] * k_cont[0] + lconn[i][1][1] * k_cont[1] * k_cont[1] +
+                                 lconn[i][2][2] * k_cont[2] * k_cont[2] + lconn[i][3][3] * k_cont[3] * k_cont[3]);
+
+            k[i] = photon.k[i] + dl_2 * photon.dkdlam[i];
+            err += std::abs((k_cont[i] - k[i]) / (k[i] + consts::eps));
+        }
+    } while (err > consts::etol && iter < consts::max_iter);
+
+    std::copy(std::begin(k), std::end(k), std::begin(photon.k));
+
+    ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+    gcov_func(photon.x, g_cov[{}]);
+
+    double e_1 = -(photon.k[0] * g_cov[{0, 0}].value() + photon.k[1] * g_cov[{0, 1}].value() +
+                   photon.k[2] * g_cov[{0, 2}].value() + photon.k[3] * g_cov[{0, 3}].value());
+
+    double err_e = std::abs((e_1 - photon.e_0_s) / photon.e_0_s);
+
+    if (n < 7 && (err_e > 1.0e-4 || err > consts::etol || std::isnan(err) || std::isinf(err))) {
+        std::copy(std::begin(x_cpy), std::end(x_cpy), std::begin(photon.x));
+        std::copy(std::begin(k_cpy), std::end(k_cpy), std::begin(photon.k));
+        std::copy(std::begin(dk_cpy), std::end(dk_cpy), std::begin(photon.dkdlam));
+        push_photon(photon, 0.5 * dl, n + 1);
+        push_photon(photon, 0.5 * dl, n + 1);
+        e_1 = photon.e_0_s;
+    }
+
+    photon.e_0_s = e_1;
+}
+
+void HARMModel::record_super_photon(const struct Photon &photon) {
+    if (std::isnan(photon.w) || std::isnan(photon.e)) {
+        return;
+    }
+
+    if (photon.tau_scatt > max_tau_scatt_) {
+        max_tau_scatt_ = photon.tau_scatt;
+    }
+
+    double dx2 = (header_.x_stop[2] - header_.x_start[2]) / (2.0 * consts::n_th_bins);
+    int ix2;
+    if (photon.x[2] < 0.5 * (header_.x_start[2] + header_.x_stop[2])) {
+        ix2 = static_cast<int>(photon.x[2] / dx2);
+    } else {
+        ix2 = static_cast<int>((header_.x_stop[2] - photon.x[2]) / dx2);
+    }
+
+    if (ix2 < 0 || ix2 >= consts::n_th_bins) {
+        return;
+    }
+
+    double l_e = std::log(photon.e);
+    int i_e = static_cast<int>((l_e - l_e_0_) / d_l_e_ + 2.5) - 2;
+
+    if (i_e < 0 || i_e >= consts::n_e_bins) {
+        return;
+    }
+
+    ++n_super_photon_recorded_;
+    n_scatt_ += photon.n_scatt;
+
+    /* sum in photon */
+    spectrum_[ix2][i_e].dNdlE += photon.w;
+    spectrum_[ix2][i_e].dEdlE += photon.w * photon.e;
+    spectrum_[ix2][i_e].tau_abs += photon.w * photon.tau_abs;
+    spectrum_[ix2][i_e].tau_scatt += photon.w * photon.tau_scatt;
+    spectrum_[ix2][i_e].X1iav += photon.w * photon.x1i;
+    spectrum_[ix2][i_e].X2isq += photon.w * (photon.x2i * photon.x2i);
+    spectrum_[ix2][i_e].X3fsq += photon.w * (photon.x[3] * photon.x[3]);
+    spectrum_[ix2][i_e].ne0 += photon.w * (photon.n_e_0);
+    spectrum_[ix2][i_e].b0 += photon.w * (photon.b_0);
+    spectrum_[ix2][i_e].thetae0 += photon.w * (photon.theta_e_0);
+    spectrum_[ix2][i_e].nscatt += photon.n_scatt;
+    spectrum_[ix2][i_e].nph += 1.0;
 }
 
 std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
@@ -632,20 +1157,293 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
     return {nz, dn_max};
 }
 
-struct BLCoord HARMModel::get_bl_coord(double x[consts::n_dim]) const {
+double HARMModel::bias_func(double t_e, double w) const {
+    double max = 0.5 * w / consts::weight_min;
+    double avg_num_scatt = n_scatt_ / (1.0 * n_super_photon_recorded_ + 1.0);
+    double bias = 100.0 * t_e * t_e / (bias_norm_ * max_tau_scatt_ * (avg_num_scatt + 2.0));
+
+    if (bias < consts::tp_over_te) {
+        bias = consts::tp_over_te;
+    }
+    if (bias > max) {
+        bias = max;
+    }
+
+    return bias / consts::tp_over_te;
+}
+
+std::tuple<int, int, double, double> HARMModel::x_to_ij(const double (&x)[consts::n_dim]) const {
+    int i = static_cast<int>((x[1] - header_.x_start[1]) / header_.dx[1] - 0.5 + 1000) - 1000;
+    int j = static_cast<int>((x[2] - header_.x_start[2]) / header_.dx[2] - 0.5 + 1000) - 1000;
+
+    double del_i;
+    double del_j;
+
+    if (i < 0) {
+        i = 0;
+        del_i = 0.0;
+    } else if (i > static_cast<int>(header_.n[0]) - 2) {
+        i = header_.n[0] - 2;
+        del_i = 1.0;
+    } else {
+        del_i = (x[1] - ((i + 0.5) * header_.dx[1] + header_.x_start[1])) / header_.dx[1];
+    }
+
+    if (j < 0) {
+        j = 0;
+        del_j = 0.0;
+    } else if (j > static_cast<int>(header_.n[1]) - 2) {
+        j = header_.n[1] - 2;
+        del_j = 1.0;
+    } else {
+        del_j = (x[2] - ((j + 0.5) * header_.dx[2] + header_.x_start[2])) / header_.dx[2];
+    }
+
+    return {i, j, del_i, del_j};
+}
+
+void HARMModel::get_connection(const double (&x)[consts::n_dim],
+                               double (&lconn)[consts::n_dim][consts::n_dim][consts::n_dim]) {
+    double r1 = std::exp(x[1]);
+    double r2 = r1 * r1;
+    double r3 = r2 * r1;
+    double r4 = r3 * r1;
+
+    double s_x = std::sin(2.0 * std::numbers::pi * x[2]);
+    double c_x = std::cos(2.0 * std::numbers::pi * x[2]);
+
+    double th = std::numbers::pi * x[2] + 0.5 * (1.0 - header_.h_slope) * s_x;
+    double dthdx2 = std::numbers::pi * (1.0 + (1.0 - header_.h_slope) * c_x);
+    double d2thdx22 = -2.0 * std::numbers::pi * std::numbers::pi * (1.0 - header_.h_slope) * s_x;
+    double dthdx22 = dthdx2 * dthdx2;
+
+    double sth = std::sin(th);
+    double cth = std::cos(th);
+
+    double sth2 = sth * sth;
+    double r1sth2 = r1 * sth2;
+    double sth4 = sth2 * sth2;
+    double cth2 = cth * cth;
+    double cth4 = cth2 * cth2;
+    double s2th = 2.0 * sth * cth;
+    double c2th = 2.0 * cth2 - 1.0;
+
+    double a = header_.a;
+    double a2 = a * a;
+    double a3 = a2 * a;
+    double a4 = a3 * a;
+    double a2sth2 = a2 * sth2;
+    double a2cth2 = a2 * cth2;
+    double a4cth4 = a4 * cth4;
+
+    double rho2 = r2 + a2cth2;
+    double rho22 = rho2 * rho2;
+    double rho23 = rho22 * rho2;
+    double irho2 = 1.0 / rho2;
+    double irho22 = irho2 * irho2;
+    double irho23 = irho22 * irho2;
+    double irho23_dthdx2 = irho23 / dthdx2;
+
+    double fac1 = r2 - a2cth2;
+    double fac1_rho23 = fac1 * irho23;
+    double fac2 = a2 + 2.0 * r2 + a2 * c2th;
+    double fac3 = a2 + r1 * (-2.0 + r1);
+
+    lconn[0][0][0] = 2.0 * r1 * fac1_rho23;
+    lconn[0][0][1] = r1 * (2.0 * r1 + rho2) * fac1_rho23;
+    lconn[0][0][2] = -a2 * r1 * s2th * dthdx2 * irho22;
+    lconn[0][0][3] = -2.0 * a * r1sth2 * fac1_rho23;
+
+    // lconn[0][1][0] = lconn[0][0][1];
+    lconn[0][1][1] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
+    lconn[0][1][2] = -a2 * r2 * s2th * dthdx2 * irho22;
+    lconn[0][1][3] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
+
+    // lconn[0][2][0] = lconn[0][0][2];
+    // lconn[0][2][1] = lconn[0][1][2];
+    lconn[0][2][2] = -2.0 * r2 * dthdx22 * irho2;
+    lconn[0][2][3] = a3 * r1sth2 * s2th * dthdx2 * irho22;
+
+    // lconn[0][3][0] = lconn[0][0][3];
+    // lconn[0][3][1] = lconn[0][1][3];
+    // lconn[0][3][2] = lconn[0][2][3];
+    lconn[0][3][3] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
+
+    lconn[1][0][0] = fac3 * fac1 / (r1 * rho23);
+    lconn[1][0][1] = fac1 * (-2.0 * r1 + a2sth2) * irho23;
+    lconn[1][0][2] = 0.0;
+    lconn[1][0][3] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
+
+    // lconn[1][1][0] = lconn[1][0][1];
+    lconn[1][1][1] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 +
+                                                            r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
+                     irho23;
+    lconn[1][1][2] = -a2 * dthdx2 * s2th / fac2;
+    lconn[1][1][3] = a * sth2 *
+                     (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
+                     irho23;
+
+    // lconn[1][2][0] = lconn[1][0][2];
+    // lconn[1][2][1] = lconn[1][1][2];
+    lconn[1][2][2] = -fac3 * dthdx22 * irho2;
+    lconn[1][2][3] = 0.0;
+
+    // lconn[1][3][0] = lconn[1][0][3];
+    // lconn[1][3][1] = lconn[1][1][3];
+    // lconn[1][3][2] = lconn[1][2][3];
+    lconn[1][3][3] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
+
+    lconn[2][0][0] = -a2 * r1 * s2th * irho23_dthdx2;
+    lconn[2][0][1] = r1 * lconn[2][0][0];
+    lconn[2][0][2] = 0.0;
+    lconn[2][0][3] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
+
+    // lconn[2][1][0] = lconn[2][0][1];
+    lconn[2][1][1] = r2 * lconn[2][0][0];
+    lconn[2][1][2] = r2 * irho2;
+    lconn[2][1][3] =
+        (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1sth2))) *
+        irho23_dthdx2;
+
+    // lconn[2][2][0] = lconn[2][0][2];
+    // lconn[2][2][1] = lconn[2][1][2];
+    lconn[2][2][2] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
+    lconn[2][2][3] = 0.0;
+
+    // lconn[2][3][0] = lconn[2][0][3];
+    // lconn[2][3][1] = lconn[2][1][3];
+    // lconn[2][3][2] = lconn[2][2][3];
+    lconn[2][3][3] =
+        -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
+
+    lconn[3][0][0] = a * fac1_rho23;
+    lconn[3][0][1] = r1 * lconn[3][0][0];
+    lconn[3][0][2] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
+    lconn[3][0][3] = -a2sth2 * fac1_rho23;
+
+    // lconn[3][1][0] = lconn[3][0][1];
+    lconn[3][1][1] = a * r2 * fac1_rho23;
+    lconn[3][1][2] = -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
+    lconn[3][1][3] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
+
+    // lconn[3][2][0] = lconn[3][0][2];
+    // lconn[3][2][1] = lconn[3][1][2];
+    lconn[3][2][2] = -a * r1 * dthdx22 * irho2;
+    lconn[3][2][3] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
+
+    // lconn[3][3][0] = lconn[3][0][3];
+    // lconn[3][3][1] = lconn[3][1][3];
+    // lconn[3][3][2] = lconn[3][2][3];
+    lconn[3][3][3] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
+}
+
+void HARMModel::init_dkdlam(const double (&x)[consts::n_dim],
+                            const double (&k_con)[consts::n_dim],
+                            double (&d_k)[consts::n_dim]) {
+    double lconn[consts::n_dim][consts::n_dim][consts::n_dim];
+
+    get_connection(x, lconn);
+
+    for (int i = 0; i < consts::n_dim; ++i) {
+        d_k[i] =
+            -2.0 *
+            (k_con[0] * (lconn[i][0][1] * k_con[1] + lconn[i][0][2] * k_con[2] + lconn[i][0][3] * k_con[3]) +
+             k_con[1] * (lconn[i][1][2] * k_con[2] + lconn[i][1][3] * k_con[3]) + lconn[i][2][3] * k_con[2] * k_con[3]);
+
+        d_k[i] -= (lconn[i][0][0] * k_con[0] * k_con[0] + lconn[i][1][1] * k_con[1] * k_con[1] +
+                   lconn[i][2][2] * k_con[2] * k_con[2] + lconn[i][3][3] * k_con[3] * k_con[3]);
+    }
+}
+
+bool HARMModel::stop_criterion(struct Photon &photon) const {
+    static const double rh = 1.0 + std::sqrt(1.0 - header_.a * header_.a);
+    static const double x1_min = std::log(rh);
+    static const double x1_max = std::log(consts::r_max);
+
+    if (photon.x[1] < x1_min) {
+        return true;
+    }
+
+    if (photon.x[1] > x1_max) {
+        if (photon.w < consts::weight_min) {
+            if (monty_rand::rand() <= 1.0 / consts::roulette) {
+                photon.w *= consts::roulette;
+            } else {
+                photon.w = 0.0;
+            }
+        }
+        return true;
+    }
+
+    if (photon.w < consts::weight_min) {
+        if (monty_rand::rand() <= 1.0 / consts::roulette) {
+            photon.w *= consts::roulette;
+        } else {
+            photon.w = 0.0;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HARMModel::record_criterion(const struct Photon &photon) const {
+    static const double x1_max = std::log(consts::r_max);
+
+    return (photon.x[1] > x1_max);
+}
+
+double HARMModel::step_size(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim]) {
+    static constexpr double eps = 0.04;
+
+    double dl_x_1 = eps * x[1] / (std::abs(k[1]) + consts::eps);
+    double dl_x_2 = eps * std::min(x[2], header_.x_start[2] - x[2]) / (std::abs(k[2]) + consts::eps);
+    double dl_x_3 = eps / (std::abs(k[3]) / consts::eps);
+
+    double i_dl_x_1 = 1.0 / (std::abs(dl_x_1) + consts::eps);
+    double i_dl_x_2 = 1.0 / (std::abs(dl_x_2) + consts::eps);
+    double i_dl_x_3 = 1.0 / (std::abs(dl_x_3) + consts::eps);
+
+    return 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
+}
+
+struct BLCoord HARMModel::get_bl_coord(const double (&x)[consts::n_dim]) const {
     return BLCoord{
         .r = std::exp(x[1]) + header_.r_0,
         .theta = std::numbers::pi * x[2] + ((1.0 - header_.h_slope) / 2.0) * std::sin(2.0 * std::numbers::pi * x[2]),
     };
 }
 
-std::array<double, 4> HARMModel::get_coord(int x_1, int x_2) const {
-    return {
-        header_.x_start[0],
-        header_.x_start[1] + (x_1 + 0.5) * header_.dx[1],
-        header_.x_start[2] + (x_2 + 0.5) * header_.dx[2],
-        header_.x_start[3],
-    };
+void HARMModel::get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const {
+    x[0] = header_.x_start[0];
+    x[1] = header_.x_start[1] + (x_1 + 0.5) * header_.dx[1];
+    x[2] = header_.x_start[2] + (x_2 + 0.5) * header_.dx[2];
+    x[3] = header_.x_start[3];
+}
+
+static double interp_scalar(ndarray::NDArray<double> var, int i, int j, const double (&coeff)[consts::n_dim]) {
+    /* clang-format off */
+    return (
+        var[{i, j}].value() * coeff[0] +
+        var[{i, j + 1}].value() * coeff[1] +
+        var[{i + 1, j}].value() * coeff[2] +
+        var[{i + 1, j + 1}].value() * coeff[3]
+    );
+    /* clang-format on */
+}
+
+static void boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]) {
+    double g = u[0];
+    double v_ = std::sqrt(std::abs(1. - 1. / (g * g)));
+    double n1 = u[1] / (g * v_ + consts::eps);
+    double n2 = u[2] / (g * v_ + consts::eps);
+    double n3 = u[3] / (g * v_ + consts::eps);
+    double gm1 = g - 1.;
+
+    /* general Lorentz boost into frame u from lab frame */
+    vp[0] = u[0] * v[0] - u[1] * v[1] - u[2] * v[2] - u[3] * v[3];
+    vp[1] = -u[1] * v[0] + (1. + n1 * n1 * gm1) * v[1] + n1 * n2 * gm1 * v[2] + n1 * n3 * gm1 * v[3];
+    vp[2] = -u[2] * v[0] + n2 * n1 * gm1 * v[1] + (1. + n2 * n2 * gm1) * v[2] + n2 * n3 * gm1 * v[3];
+    vp[3] = -u[3] * v[0] + n3 * n1 * gm1 * v[1] + n3 * n2 * gm1 * v[2] + (1. + n3 * n3 * gm1) * v[3];
 }
 
 }; /* namespace harm */
