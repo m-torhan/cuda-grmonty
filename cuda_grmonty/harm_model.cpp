@@ -216,8 +216,11 @@ void HARMModel::init_geometry() {
             double x[consts::n_dim];
             get_coord(x_1, x_2, x);
 
-            gcov_func(x, geometry_.cov[{x_1, x_2}]);
-            gcon_func(x, geometry_.con[{x_1, x_2}]);
+            auto g_cov = geometry_.cov[{x_1, x_2}];
+            auto g_con = geometry_.con[{x_1, x_2}];
+
+            gcov_func(x, g_cov);
+            gcon_func(x, g_con);
 
             geometry_.det[{x_1, x_2}] = std::sqrt(std::abs(geometry_.cov[{x_1, x_2}].det()));
         }
@@ -309,7 +312,7 @@ void HARMModel::init_nint_table() {
     spdlog::info("Initializing nint table done");
 }
 
-void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcon) const {
+void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &gcon) const {
     gcon = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
@@ -335,8 +338,8 @@ void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<dou
     gcon[{3, 3}] = irho2 / (sin_theta * sin_theta);
 }
 
-void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &&gcov) const {
-    gcov = 0.0;
+void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_cov) const {
+    g_cov = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
 
@@ -352,19 +355,19 @@ void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<dou
         std::numbers::pi + (1.0 - header_.h_slope) * std::numbers::pi * std::cos(2.0 * std::numbers::pi * x[2]);
     double pfac = 1.0;
 
-    gcov[{0, 0}] = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
-    gcov[{0, 1}] = (2.0 * bl_coord.r / rho2) * tfac * rfac;
-    gcov[{0, 3}] = (-2.0 * header_.a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
+    g_cov[{0, 0}] = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
+    g_cov[{0, 1}] = (2.0 * bl_coord.r / rho2) * tfac * rfac;
+    g_cov[{0, 3}] = (-2.0 * header_.a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
 
-    gcov[{1, 0}] = gcov[{0, 1}].value();
-    gcov[{1, 1}] = (1.0 + 2.0 * bl_coord.r / rho2) * rfac * rfac;
-    gcov[{1, 3}] = (-header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * rfac * pfac;
+    g_cov[{1, 0}] = g_cov[{0, 1}].value();
+    g_cov[{1, 1}] = (1.0 + 2.0 * bl_coord.r / rho2) * rfac * rfac;
+    g_cov[{1, 3}] = (-header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * rfac * pfac;
 
-    gcov[{2, 2}] = rho2 * hfac * hfac;
+    g_cov[{2, 2}] = rho2 * hfac * hfac;
 
-    gcov[{3, 0}] = gcov[{0, 3}].value();
-    gcov[{3, 1}] = gcov[{1, 3}].value();
-    gcov[{3, 3}] =
+    g_cov[{3, 0}] = g_cov[{0, 3}].value();
+    g_cov[{3, 1}] = g_cov[{1, 3}].value();
+    g_cov[{3, 3}] =
         sin_theta_2 * (rho2 + header_.a * header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * pfac * pfac;
 }
 
@@ -466,7 +469,7 @@ struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
 
     ndarray::NDArray<double> g_con({consts::n_dim, consts::n_dim});
 
-    gcon_func(x, g_con[{}]);
+    gcon_func(x, g_con);
 
     double v_dot_v = 0.0;
 
@@ -604,13 +607,6 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
         zone.quit_flag = 0;
     }
 
-    // spdlog::debug("e_con\n{} {} {} {}\n{} {} {} {}\n{} {} {} {}\n{} {} {} {}",
-    //               e_con[0][0], e_con[0][1], e_con[0][2], e_con[0][3],
-    //               e_con[1][0], e_con[1][1], e_con[1][2], e_con[1][3],
-    //               e_con[2][0], e_con[2][1], e_con[2][2], e_con[2][3],
-    //               e_con[3][0], e_con[3][1], e_con[3][2], e_con[3][3]
-    //           );
-    // spdlog::debug("k_tetrad {} {} {} {}", k_tetrad[0], k_tetrad[1], k_tetrad[2], k_tetrad[3]);
     tetrads::tetrad_to_coordinate(e_con, k_tetrad, photon.k);
 
     k_tetrad[0] *= -1.0;
@@ -680,7 +676,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
 
     ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
 
-    gcov_func(photon.x, g_cov[{}]);
+    gcov_func(photon.x, g_cov);
     auto fluid_params = get_fluid_params(photon.x, g_cov);
 
     double theta =
@@ -695,13 +691,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
 
     int n_step = 0;
 
-    // spdlog::debug("track loop");
-    // spdlog::debug("fluid params {} {} {} {} {} {} {}", fluid_params.theta_e, fluid_params.n_e, fluid_params.b,
-    //               fluid_params.u_cov[0], fluid_params.u_cov[0], fluid_params.u_cov[0], fluid_params.u_cov[0]);
-    // spdlog::debug("photon.x {} {} {} {}", n_step, photon.x[0], photon.x[1], photon.x[2], photon.x[3]);
-    // spdlog::debug("photon.k {} {} {} {}", n_step, photon.k[0], photon.k[1], photon.k[2], photon.k[3]);
     while (!stop_criterion(photon)) {
-        // spdlog::debug("step {} pos {} {} {} {}", n_step, photon.x[0], photon.x[1], photon.x[2], photon.x[3]);
         double x[consts::n_dim];
         double k[consts::n_dim];
         double d_k[consts::n_dim];
@@ -722,10 +712,9 @@ void HARMModel::track_super_photon(struct Photon &photon) {
 
         /* allow photon to interact with matter */
         ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
-        gcov_func(photon.x, g_cov[{}]);
+        gcov_func(photon.x, g_cov);
         auto fluid_params = get_fluid_params(photon.x, g_cov);
 
-        spdlog::debug("{} {} {}", alpha_absi, alpha_scatti, fluid_params.n_e);
         if (alpha_absi > 0.0 || alpha_scatti > 0.0 || fluid_params.n_e > 0.0) {
             bool bound_flag = false;
             double theta;
@@ -777,8 +766,8 @@ void HARMModel::track_super_photon(struct Photon &photon) {
             struct Photon photon_2;
             photon_2.w = photon.w / bias;
 
-            if (bias + d_tau_scatt > x1 && photon_2.w > consts::weight_min) {
-                double frac = x1 / (bias + d_tau_scatt);
+            if (bias * d_tau_scatt > x1 && photon_2.w > consts::weight_min) {
+                double frac = x1 / (bias * d_tau_scatt);
 
                 /* apply absorption until scattering event */
                 d_tau_abs *= frac;
@@ -804,7 +793,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
                 std::copy(std::begin(d_k), std::end(d_k), std::begin(photon.dkdlam));
                 photon.e_0_s = e_0;
 
-                gcov_func(photon.x, g_cov[{}]);
+                gcov_func(photon.x, g_cov);
 
                 auto fluid_params = get_fluid_params(photon.x, g_cov);
 
@@ -856,6 +845,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
         ++n_step;
 
         if (n_step > consts::max_n_step) {
+            spdlog::warn("max step reached in super photon tracking");
             break;
         }
     }
@@ -1033,7 +1023,7 @@ void HARMModel::push_photon(struct Photon &photon, double dl, int n) {
     std::copy(std::begin(k), std::end(k), std::begin(photon.k));
 
     ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
-    gcov_func(photon.x, g_cov[{}]);
+    gcov_func(photon.x, g_cov);
 
     double e_1 = -(photon.k[0] * g_cov[{0, 0}].value() + photon.k[1] * g_cov[{0, 1}].value() +
                    photon.k[2] * g_cov[{0, 2}].value() + photon.k[3] * g_cov[{0, 3}].value());
@@ -1162,12 +1152,7 @@ double HARMModel::bias_func(double t_e, double w) const {
     double avg_num_scatt = n_scatt_ / (1.0 * n_super_photon_recorded_ + 1.0);
     double bias = 100.0 * t_e * t_e / (bias_norm_ * max_tau_scatt_ * (avg_num_scatt + 2.0));
 
-    if (bias < consts::tp_over_te) {
-        bias = consts::tp_over_te;
-    }
-    if (bias > max) {
-        bias = max;
-    }
+    bias = std::clamp(bias, consts::tp_over_te, max);
 
     return bias / consts::tp_over_te;
 }

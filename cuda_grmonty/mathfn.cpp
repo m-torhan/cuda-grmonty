@@ -11,7 +11,7 @@
 
 namespace mathfn {
 
-double bessel_Kn(int n, double x) {
+double bessel_k_n(int n, double x) {
     if (x <= 0.0) {
         throw std::invalid_argument("x must be > 0");
     }
