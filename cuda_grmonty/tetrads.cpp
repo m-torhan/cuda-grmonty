@@ -16,10 +16,11 @@ static double delta(int i, int j) { return i == j ? 1.0 : 0.0; }
 
 static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double> &g_cov);
 
-static void project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[consts::n_dim],
-                        const ndarray::NDArray<double> &g_cov);
+static void
+project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[consts::n_dim], const ndarray::NDArray<double> &g_cov);
 
-void coordinate_to_tetrad(const double (&e_cov)[consts::n_dim][consts::n_dim], const double (&k)[consts::n_dim],
+void coordinate_to_tetrad(const double (&e_cov)[consts::n_dim][consts::n_dim],
+                          const double (&k)[consts::n_dim],
                           double (&k_tetrad)[consts::n_dim]) {
     for (int i = 0; i < consts::n_dim; ++i) {
         k_tetrad[i] = 0.0;
@@ -29,7 +30,8 @@ void coordinate_to_tetrad(const double (&e_cov)[consts::n_dim][consts::n_dim], c
     }
 }
 
-void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim], const double (&k_tetrad)[consts::n_dim],
+void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim],
+                          const double (&k_tetrad)[consts::n_dim],
                           double (&k)[consts::n_dim]) {
     for (int i = 0; i < consts::n_dim; ++i) {
         k[i] = 0.0;
@@ -39,8 +41,10 @@ void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim], c
     }
 }
 
-void make_tetrad(const double (&u_con)[consts::n_dim], double (&trial)[consts::n_dim],
-                 const ndarray::NDArray<double> &g_cov, double (&e_con)[consts::n_dim][consts::n_dim],
+void make_tetrad(const double (&u_con)[consts::n_dim],
+                 double (&trial)[consts::n_dim],
+                 const ndarray::NDArray<double> &g_cov,
+                 double (&e_con)[consts::n_dim][consts::n_dim],
                  double (&e_cov)[consts::n_dim][consts::n_dim]) {
     for (int i = 0; i < consts::n_dim; ++i) {
         e_con[0][i] = u_con[i];
@@ -95,7 +99,8 @@ void make_tetrad(const double (&u_con)[consts::n_dim], double (&trial)[consts::n
     }
 }
 
-void lower(const double (&u_con)[consts::n_dim], const ndarray::NDArray<double> &g_cov,
+void lower(const double (&u_con)[consts::n_dim],
+           const ndarray::NDArray<double> &g_cov,
            double (&u_cov)[consts::n_dim]) {
     /* clang-format off */
     u_cov[0] = (
