@@ -108,9 +108,12 @@ static double jnu_integrand(double th, double k) {
 }
 
 static double emiss_table_f(double k) {
-    double result =
-        integration::gauss_kronrod_61([k](double th) { return jnu_integrand(th, k); }, 0, std::numbers::pi / 2.0,
-                                      consts::jnu::eps_abs, consts::jnu::eps_rel, 1000);
+    double result = integration::gauss_kronrod_61([k](double th) { return jnu_integrand(th, k); },
+                                                  0,
+                                                  std::numbers::pi / 2.0,
+                                                  consts::jnu::eps_abs,
+                                                  consts::jnu::eps_rel,
+                                                  1000);
 
     return std::log(4 * std::numbers::pi * result);
 }

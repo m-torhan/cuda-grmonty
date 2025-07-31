@@ -29,6 +29,13 @@ constexpr double tp_over_te = 3.0;
 
 constexpr double weight_min = 1.0e31;
 
+constexpr double r_max = 100.0;
+constexpr double roulette = 1.0e4;
+
+constexpr double etol = 1.0e-3;
+constexpr int max_iter = 2;
+constexpr int max_n_step = 1280000;
+
 constexpr double ee = 4.80320680e-10;                /* electron charge */
 constexpr double cl = 2.99792458e10;                 /* speed of light */
 constexpr double me = 9.1093826e-28;                 /* electron mass */
