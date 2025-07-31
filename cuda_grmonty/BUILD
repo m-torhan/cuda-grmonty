@@ -25,6 +25,16 @@ cc_library(
 )
 
 cc_library(
+    name = "proba",
+    srcs = ["proba.cpp"],
+    hdrs = ["proba.hpp"],
+    deps = [
+        ":consts",
+        ":monty_rand",
+    ],
+)
+
+cc_library(
     name = "linalg",
     hdrs = ["linalg.hpp"],
     deps = [
@@ -108,6 +118,7 @@ cc_library(
         ":jnu_mixed",
         ":monty_rand",
         ":ndarray",
+        ":proba",
         ":tetrads",
         "@spdlog//:spdlog",
     ],
