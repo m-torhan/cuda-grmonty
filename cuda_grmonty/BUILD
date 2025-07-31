@@ -99,6 +99,19 @@ cc_library(
 )
 
 cc_library(
+    name = "radiation",
+    srcs = ["radiation.cpp"],
+    hdrs = ["radiation.hpp"],
+    deps = [
+        ":consts",
+        ":hotcross",
+        ":jnu_mixed",
+        ":ndarray",
+        "@spdlog//:spdlog",
+    ],
+)
+
+cc_library(
     name = "parse_verbosity",
     srcs = ["parse_verbosity.cpp"],
     hdrs = ["parse_verbosity.hpp"],
@@ -119,6 +132,7 @@ cc_library(
         ":monty_rand",
         ":ndarray",
         ":proba",
+        ":radiation",
         ":tetrads",
         "@spdlog//:spdlog",
     ],
