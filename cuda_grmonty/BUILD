@@ -48,6 +48,7 @@ cc_library(
     deps = [
         ":consts",
         ":linalg",
+        "@spdlog//:spdlog",
     ],
 )
 

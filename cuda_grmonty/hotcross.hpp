@@ -13,8 +13,8 @@ namespace hotcross {
 /**
  * @brief Initializes look-up table for hot cross sections.
  */
-void init_table(ndarray::NDArray<double> &table);
+void init_table(ndarray::NDArray<double, 2> &table);
 
-double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double> &hotcross_table);
+double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table);
 
 }; /* namespace hotcross */

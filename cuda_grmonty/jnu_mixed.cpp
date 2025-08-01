@@ -13,7 +13,6 @@
 #include "cuda_grmonty/integration.hpp"
 #include "cuda_grmonty/jnu_mixed.hpp"
 #include "cuda_grmonty/mathfn.hpp"
-#include "cuda_grmonty/ndarray.hpp"
 
 namespace jnu_mixed {
 
@@ -21,11 +20,11 @@ static double jnu_integrand(double th, double k);
 
 static double emiss_table_f(double k);
 
-static double linear_interp_k2(double theta_e, const ndarray::NDArray<double> &k2_table);
+static double linear_interp_k2(double theta_e, const std::array<double, consts::n_e_samp + 1> &k2_table);
 
-static double linear_interp_f(double k, const ndarray::NDArray<double> &f_table);
+static double linear_interp_f(double k, const std::array<double, consts::n_e_samp + 1> &f_table);
 
-void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2) {
+void init_emiss_tables(std::array<double, consts::n_e_samp + 1> &f, std::array<double, consts::n_e_samp + 1> &k2) {
     spdlog::info("Initializing HARM model emission tables");
 
     static const double l_min_k = std::log(consts::jnu::min_k);
@@ -36,19 +35,24 @@ void init_emiss_tables(ndarray::NDArray<double> &f, ndarray::NDArray<double> &k2
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
         double k = std::exp(i * d_l_k + l_min_k);
-        f[{i}] = jnu_mixed::emiss_table_f(k);
+        f[i] = jnu_mixed::emiss_table_f(k);
     }
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
         double t = std::exp(i * d_l_t + l_min_t);
-        k2[{i}] = std::log(mathfn::bessel_k_n(2, 1.0 / t));
+        k2[i] = std::log(mathfn::bessel_k_n(2, 1.0 / t));
     }
 
     spdlog::info("Initializing HARM model emission tables done");
 }
 
-double synch(double nu, double n_e, double theta_e, double b, double theta, const ndarray::NDArray<double> &k2_table) {
+double synch(double nu,
+             double n_e,
+             double theta_e,
+             double b,
+             double theta,
+             const std::array<double, consts::n_e_samp + 1> &k2_table) {
     if (theta_e < consts::theta_e_min) {
         return 0.0;
     }
@@ -70,7 +74,7 @@ double synch(double nu, double n_e, double theta_e, double b, double theta, cons
            f * std::exp(-xp);
 }
 
-double k2_eval(double theta_e, const ndarray::NDArray<double> &k2_table) {
+double k2_eval(double theta_e, const std::array<double, consts::n_e_samp + 1> &k2_table) {
     if (theta_e < consts::theta_e_min) {
         return 0.0;
     }
@@ -81,7 +85,7 @@ double k2_eval(double theta_e, const ndarray::NDArray<double> &k2_table) {
     return linear_interp_k2(theta_e, k2_table);
 }
 
-double f_eval(double theta_e, double b_mag, double nu, const ndarray::NDArray<double> &f_table) {
+double f_eval(double theta_e, double b_mag, double nu, const std::array<double, consts::n_e_samp + 1> &f_table) {
     double k = consts::jnu::k_fac * nu / (b_mag * theta_e * theta_e);
 
     if (k > consts::jnu::max_k) {
@@ -118,7 +122,7 @@ static double emiss_table_f(double k) {
     return std::log(4 * std::numbers::pi * result);
 }
 
-static double linear_interp_k2(double theta_e, const ndarray::NDArray<double> &k2_table) {
+static double linear_interp_k2(double theta_e, const std::array<double, consts::n_e_samp + 1> &k2_table) {
     static const double l_min_t = std::log(consts::jnu::min_t);
     static const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
 
@@ -128,10 +132,10 @@ static double linear_interp_k2(double theta_e, const ndarray::NDArray<double> &k
 
     d_i -= i;
 
-    return std::exp((1.0 - d_i) * k2_table[{i}].value() + d_i * k2_table[{i + 1}].value());
+    return std::exp((1.0 - d_i) * k2_table[i] + d_i * k2_table[i + 1]);
 }
 
-static double linear_interp_f(double k, const ndarray::NDArray<double> &f_table) {
+static double linear_interp_f(double k, const std::array<double, consts::n_e_samp + 1> &f_table) {
     static const double l_min_k = std::log(consts::jnu::min_k);
     static const double d_l_k = std::log(consts::jnu::max_k / consts::jnu::min_k) / consts::n_e_samp;
 
@@ -141,7 +145,7 @@ static double linear_interp_f(double k, const ndarray::NDArray<double> &f_table)
 
     d_i -= i;
 
-    return std::exp((1.0 - d_i) * f_table[{i}].value() + d_i * f_table[{i + 1}].value());
+    return std::exp((1.0 - d_i) * f_table[i] + d_i * f_table[i + 1]);
 }
 
 }; /* namespace jnu_mixed */

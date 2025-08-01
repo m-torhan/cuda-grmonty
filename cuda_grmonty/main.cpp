@@ -46,6 +46,7 @@ int main(int argc, char *argv[]) {
 
     auto start = std::chrono::system_clock::now();
     int n_super_photon_created = 0;
+    int n_rate = 0;
 
     spdlog::info("Starting main loop");
 
@@ -57,11 +58,14 @@ int main(int argc, char *argv[]) {
         harm_model.track_super_photon(photon);
 
         ++n_super_photon_created;
+        ++n_rate;
 
-        if ((n_super_photon_created % 100) == 0) {
-            std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
-            double rate = n_super_photon_created / elapsed_seconds.count();
+        std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
+        if (elapsed_seconds.count() > 1.0) {
+            double rate = n_rate / elapsed_seconds.count();
             spdlog::debug("Rate {} ph/s", rate);
+            n_rate = 0;
+            start = std::chrono::system_clock::now();
         }
     }
 

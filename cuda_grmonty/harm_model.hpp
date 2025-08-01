@@ -17,7 +17,7 @@ namespace harm {
 
 struct Header {
     double t;          /* simulation time */
-    unsigned int n[2]; /* number of grid points in x1 and x2 directions  */
+    int n[2];          /* number of grid points in x1 and x2 directions  */
     double x_start[4]; /* start coordinates of the grid */
     double x_stop[4];  /* stop coordinates of the grid */
     double dx[4];      /* grid spacing */
@@ -43,20 +43,20 @@ struct Header {
 };
 
 struct Data {
-    ndarray::NDArray<double> k_rho; /* rest-mass density */
-    ndarray::NDArray<double> u;     /* internal eneergy density */
-    ndarray::NDArray<double> u_1;   /* covariant velocity components */
-    ndarray::NDArray<double> u_2;
-    ndarray::NDArray<double> u_3;
-    ndarray::NDArray<double> b_1; /* contravariant magnetic field components */
-    ndarray::NDArray<double> b_2;
-    ndarray::NDArray<double> b_3;
+    ndarray::NDArray<double, 2> k_rho; /* rest-mass density */
+    ndarray::NDArray<double, 2> u;     /* internal eneergy density */
+    ndarray::NDArray<double, 2> u_1;   /* covariant velocity components */
+    ndarray::NDArray<double, 2> u_2;
+    ndarray::NDArray<double, 2> u_3;
+    ndarray::NDArray<double, 2> b_1; /* contravariant magnetic field components */
+    ndarray::NDArray<double, 2> b_2;
+    ndarray::NDArray<double, 2> b_3;
 };
 
 struct Geometry {
-    ndarray::NDArray<double> cov;
-    ndarray::NDArray<double> con;
-    ndarray::NDArray<double> det;
+    ndarray::NDArray<double, 4> cov;
+    ndarray::NDArray<double, 4> con;
+    ndarray::NDArray<double, 2> det;
 };
 
 struct BLCoord {
@@ -151,13 +151,14 @@ public:
 
     void init_nint_table();
 
-    void gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_con) const;
+    void gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double, 2> &g_con) const;
 
-    void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_cov) const;
+    void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double, 2> &g_cov) const;
 
     struct FluidZone get_fluid_zone(int x_1, int x_2) const;
 
-    struct FluidParams get_fluid_params(const double (&x)[consts::n_dim], const ndarray::NDArray<double> &g_cov) const;
+    struct FluidParams get_fluid_params(const double (&x)[consts::n_dim],
+                                        const ndarray::NDArray<double, 2> &g_cov) const;
 
     /**
      * @brief Return the next zone and the number of superphotons that need to be generated in it.
@@ -175,7 +176,7 @@ public:
     void scatter_super_photon(struct Photon &photon,
                               struct Photon &photon_2,
                               const struct FluidParams &fluid_params,
-                              const ndarray::NDArray<double> &g_cov,
+                              const ndarray::NDArray<double, 2> &g_cov,
                               double b_unit) const;
 
     void
@@ -210,14 +211,6 @@ public:
 
     const struct Data *get_data() const { return &data_; }
 
-    const int get_photon_n() const { return photon_n_; }
-
-    const double get_l_unit() const { return l_unit_; }
-
-    const Geometry &get_geometry() const { return geometry_; }
-
-    const ndarray::NDArray<double> &get_k2_table() const { return k2_; }
-
 private:
     struct Header header_;
     struct Data data_;
@@ -248,13 +241,13 @@ private:
     bool zone_flag_ = 0;
 
     struct Geometry geometry_;
-    ndarray::NDArray<double> hotcross_table_ =
-        ndarray::NDArray<double>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
-    ndarray::NDArray<double> f_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
-    ndarray::NDArray<double> k2_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
-    ndarray::NDArray<double> weight_ = ndarray::NDArray<double>({consts::n_e_samp + 1});
-    ndarray::NDArray<double> nint_ = ndarray::NDArray<double>({consts::nint + 1});
-    ndarray::NDArray<double> dndlnu_max_ = ndarray::NDArray<double>({consts::nint + 1});
+    ndarray::NDArray<double, 2> hotcross_table_ =
+        ndarray::NDArray<double, 2>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
+    std::array<double, consts::n_e_samp + 1> f_;
+    std::array<double, consts::n_e_samp + 1> k2_;
+    std::array<double, consts::n_e_samp + 1> weight_;
+    std::array<double, consts::nint + 1> nint_;
+    std::array<double, consts::nint + 1> dndlnu_max_;
 
     struct Spectrum spectrum_[consts::n_th_bins][consts::n_e_bins];
 };
