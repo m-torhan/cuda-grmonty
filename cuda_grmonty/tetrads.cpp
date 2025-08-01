@@ -14,10 +14,11 @@ namespace tetrads {
 
 static double delta(int i, int j) { return i == j ? 1.0 : 0.0; }
 
-static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double> &g_cov);
+static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double, 2> &g_cov);
 
-static void
-project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[consts::n_dim], const ndarray::NDArray<double> &g_cov);
+static void project_out(double (&v_con_a)[consts::n_dim],
+                        double (&v_con_b)[consts::n_dim],
+                        const ndarray::NDArray<double, 2> &g_cov);
 
 void coordinate_to_tetrad(const double (&e_cov)[consts::n_dim][consts::n_dim],
                           const double (&k)[consts::n_dim],
@@ -43,7 +44,7 @@ void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim],
 
 void make_tetrad(const double (&u_con)[consts::n_dim],
                  double (&trial)[consts::n_dim],
-                 const ndarray::NDArray<double> &g_cov,
+                 const ndarray::NDArray<double, 2> &g_cov,
                  double (&e_con)[consts::n_dim][consts::n_dim],
                  double (&e_cov)[consts::n_dim][consts::n_dim]) {
     for (int i = 0; i < consts::n_dim; ++i) {
@@ -56,7 +57,7 @@ void make_tetrad(const double (&u_con)[consts::n_dim],
 
     for (int i = 0; i < consts::n_dim; ++i) {
         for (int j = 0; j < consts::n_dim; ++j) {
-            norm += trial[i] * trial[j] * g_cov[{i, j}].value();
+            norm += trial[i] * trial[j] * g_cov(i, j);
         }
     }
 
@@ -100,42 +101,42 @@ void make_tetrad(const double (&u_con)[consts::n_dim],
 }
 
 void lower(const double (&u_con)[consts::n_dim],
-           const ndarray::NDArray<double> &g_cov,
+           const ndarray::NDArray<double, 2> &g_cov,
            double (&u_cov)[consts::n_dim]) {
     /* clang-format off */
     u_cov[0] = (
-        g_cov[{0, 0}].value() * u_con[0]
-      + g_cov[{0, 1}].value() * u_con[1]
-      + g_cov[{0, 2}].value() * u_con[2]
-      + g_cov[{0, 3}].value() * u_con[3]
+        g_cov(0, 0) * u_con[0]
+      + g_cov(0, 1) * u_con[1]
+      + g_cov(0, 2) * u_con[2]
+      + g_cov(0, 3) * u_con[3]
     );
     u_cov[1] = (
-        g_cov[{1, 0}].value() * u_con[0]
-      + g_cov[{1, 1}].value() * u_con[1]
-      + g_cov[{1, 2}].value() * u_con[2]
-      + g_cov[{1, 3}].value() * u_con[3]
+        g_cov(1, 0) * u_con[0]
+      + g_cov(1, 1) * u_con[1]
+      + g_cov(1, 2) * u_con[2]
+      + g_cov(1, 3) * u_con[3]
     );
     u_cov[2] = (
-        g_cov[{2, 0}].value() * u_con[0]
-      + g_cov[{2, 1}].value() * u_con[1]
-      + g_cov[{2, 2}].value() * u_con[2]
-      + g_cov[{2, 3}].value() * u_con[3]
+        g_cov(2, 0) * u_con[0]
+      + g_cov(2, 1) * u_con[1]
+      + g_cov(2, 2) * u_con[2]
+      + g_cov(2, 3) * u_con[3]
     );
     u_cov[3] = (
-        g_cov[{3, 0}].value() * u_con[0]
-      + g_cov[{3, 1}].value() * u_con[1]
-      + g_cov[{3, 2}].value() * u_con[2]
-      + g_cov[{3, 3}].value() * u_con[3]
+        g_cov(3, 0) * u_con[0]
+      + g_cov(3, 1) * u_con[1]
+      + g_cov(3, 2) * u_con[2]
+      + g_cov(3, 3) * u_con[3]
     );
     /* clang-format off */
 }
 
-static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double> &g_cov) {
+static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double, 2> &g_cov) {
     double norm = 0.0;
 
     for (int i = 0; i < consts::n_dim; ++i) {
         for (int j = 0; j < consts::n_dim; ++j) {
-            norm += v_con[i] * v_con[j] * g_cov[{i, j}].value();
+            norm += v_con[i] * v_con[j] * g_cov(i, j);
         }
     }
 
@@ -147,12 +148,12 @@ static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<dou
 }
 
 static void project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[consts::n_dim],
-                        const ndarray::NDArray<double> &g_cov) {
+                        const ndarray::NDArray<double, 2> &g_cov) {
     double v_con_b_sq = 0.0;
 
     for (int i = 0; i < consts::n_dim; ++i) {
         for (int j = 0; j < consts::n_dim; ++j) {
-            v_con_b_sq += v_con_b[i] * v_con_b[j] * g_cov[{i, j}].value();
+            v_con_b_sq += v_con_b[i] * v_con_b[j] * g_cov(i, j);
         }
     }
 
@@ -160,7 +161,7 @@ static void project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[cons
 
     for (int i = 0; i < consts::n_dim; ++i) {
         for (int j = 0; j < consts::n_dim; ++j) {
-            a_dot_b = v_con_a[i] * v_con_b[j] * g_cov[{i, j}].value();
+            a_dot_b = v_con_a[i] * v_con_b[j] * g_cov(i, j);
         }
     }
 

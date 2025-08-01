@@ -28,7 +28,7 @@
 
 namespace harm {
 
-static double interp_scalar(ndarray::NDArray<double> var, int i, int j, const double (&coeff)[consts::n_dim]);
+static double interp_scalar(const ndarray::NDArray<double, 2> &var, int i, int j, const double (&coeff)[consts::n_dim]);
 
 static void boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]);
 
@@ -123,14 +123,14 @@ void HARMModel::read_file(std::string filepath) {
     double b_cov[4]; /* convariant 4-magnetic field components */
 
     /* prepare space for data */
-    data_.k_rho = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.u = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.u_1 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.u_2 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.u_3 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.b_1 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.b_2 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
-    data_.b_3 = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
+    data_.k_rho = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.u = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.u_1 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.u_2 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.u_3 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.b_1 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.b_2 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
+    data_.b_3 = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
 
     /* read data */
     spdlog::debug("Reading file data");
@@ -150,14 +150,14 @@ void HARMModel::read_file(std::string filepath) {
         iss >> x[2];
         iss >> r;
         iss >> h;
-        iss >> data_.k_rho[{x_1, x_2}];
-        iss >> data_.u[{x_1, x_2}];
-        iss >> data_.u_1[{x_1, x_2}];
-        iss >> data_.u_2[{x_1, x_2}];
-        iss >> data_.u_3[{x_1, x_2}];
-        iss >> data_.b_1[{x_1, x_2}];
-        iss >> data_.b_2[{x_1, x_2}];
-        iss >> data_.b_3[{x_1, x_2}];
+        iss >> data_.k_rho(x_1, x_2);
+        iss >> data_.u(x_1, x_2);
+        iss >> data_.u_1(x_1, x_2);
+        iss >> data_.u_2(x_1, x_2);
+        iss >> data_.u_3(x_1, x_2);
+        iss >> data_.b_1(x_1, x_2);
+        iss >> data_.b_2(x_1, x_2);
+        iss >> data_.b_3(x_1, x_2);
         iss >> div_b;
         iss >> u_con[0] >> u_con[1] >> u_con[2] >> u_con[3];
         iss >> u_cov[0] >> u_cov[1] >> u_cov[2] >> u_cov[3];
@@ -167,15 +167,14 @@ void HARMModel::read_file(std::string filepath) {
         iss >> vmin[1] >> vmax[1];
         iss >> g_det;
 
-        bias_norm_ +=
-            d_v * g_det * std::pow(data_.u[{x_1, x_2}].value() / data_.k_rho[{x_1, x_2}].value() * theta_e_unit_, 2.);
+        bias_norm_ += d_v * g_det * std::pow(data_.u(x_1, x_2) / data_.k_rho(x_1, x_2) * theta_e_unit_, 2.);
         v += d_v * g_det;
 
         if (x_1 <= 20) {
-            d_mact += g_det * data_.k_rho[{x_1, x_2}].value() * u_con[1];
+            d_mact += g_det * data_.k_rho(x_1, x_2) * u_con[1];
         }
         if (x_1 >= 20 && x_1 < 40) {
-            l_adv += g_det * data_.u[{x_1, x_2}].value() * u_con[1] * u_con[0];
+            l_adv += g_det * data_.u(x_1, x_2) * u_con[1] * u_con[0];
         }
     }
 
@@ -206,9 +205,9 @@ void HARMModel::init() {
 void HARMModel::init_geometry() {
     spdlog::info("Initializing HARM model geometry");
 
-    geometry_.cov = ndarray::NDArray<double>({header_.n[0], header_.n[1], consts::n_dim, consts::n_dim});
-    geometry_.con = ndarray::NDArray<double>({header_.n[0], header_.n[1], consts::n_dim, consts::n_dim});
-    geometry_.det = ndarray::NDArray<double>({header_.n[0], header_.n[1]});
+    geometry_.cov = ndarray::NDArray<double, 4>({header_.n[0], header_.n[1], consts::n_dim, consts::n_dim});
+    geometry_.con = ndarray::NDArray<double, 4>({header_.n[0], header_.n[1], consts::n_dim, consts::n_dim});
+    geometry_.det = ndarray::NDArray<double, 2>({header_.n[0], header_.n[1]});
 
     for (int x_1 = 0; x_1 < static_cast<int>(header_.n[0]); ++x_1) {
         spdlog::debug("{} / {}", x_1, header_.n[0]);
@@ -216,13 +215,13 @@ void HARMModel::init_geometry() {
             double x[consts::n_dim];
             get_coord(x_1, x_2, x);
 
-            auto g_cov = geometry_.cov[{x_1, x_2}];
-            auto g_con = geometry_.con[{x_1, x_2}];
+            auto g_cov = geometry_.cov(x_1, x_2);
+            auto g_con = geometry_.con(x_1, x_2);
 
             gcov_func(x, g_cov);
             gcon_func(x, g_con);
 
-            geometry_.det[{x_1, x_2}] = std::sqrt(std::abs(geometry_.cov[{x_1, x_2}].det()));
+            geometry_.det(x_1, x_2) = std::sqrt(std::abs(geometry_.cov(x_1, x_2).det()));
         }
     }
 
@@ -258,7 +257,7 @@ void HARMModel::init_weight_table() {
             double k2 = jnu_mixed::k2_eval(fluid_zone.theta_e, k2_);
             double fac = (consts::super_photon::jcst * fluid_zone.n_e * fluid_zone.b * fluid_zone.theta_e *
                           fluid_zone.theta_e / k2) *
-                         s_fac * geometry_.det[{i, j}].value();
+                         s_fac * geometry_.det(i, j);
             for (int k = 0; k <= consts::n_e_samp; ++k) {
                 double f = jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu[k], f_);
                 sum[k] += fac * f;
@@ -267,7 +266,7 @@ void HARMModel::init_weight_table() {
     }
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
-        weight_[{i}] = std::log(sum[i] / (consts::hpl * photon_n_));
+        weight_[i] = std::log(sum[i] / (consts::hpl * photon_n_));
     }
 
     spdlog::info("Initializing super photon weight table done");
@@ -293,8 +292,8 @@ void HARMModel::init_nint_table() {
         double b_mag = std::exp(i * d_l_b + l_b_min);
 
         for (int j = 0; j < consts::n_e_samp; ++j) {
-            double dn = jnu_mixed::f_eval(1.0, b_mag, std::exp(j * d_l_nu + l_nu_min), f_) /
-                        (std::exp(weight_[{j}].value()) + 1.0e-100);
+            double dn =
+                jnu_mixed::f_eval(1.0, b_mag, std::exp(j * d_l_nu + l_nu_min), f_) / (std::exp(weight_[j]) + 1.0e-100);
 
             if (dn > dndlnu_max) {
                 dndlnu_max = dn;
@@ -305,15 +304,15 @@ void HARMModel::init_nint_table() {
                 consts::ee * consts::ee * consts::ee / (27.0 * consts::me * consts::cl * consts::cl) *
                 (1.0 / consts::hpl);
 
-        nint_[{i}] = std::log(nint);
-        dndlnu_max_[{i}] = std::log(dndlnu_max);
+        nint_[i] = std::log(nint);
+        dndlnu_max_[i] = std::log(dndlnu_max);
     }
 
     spdlog::info("Initializing nint table done");
 }
 
-void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &gcon) const {
-    gcon = 0.0;
+void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<double, 2> &g_con) const {
+    g_con = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
 
@@ -325,20 +324,20 @@ void HARMModel::gcon_func(const double (&x)[consts::n_dim], ndarray::NDArray<dou
     double hfac =
         std::numbers::pi + (1.0 - header_.h_slope) * std::numbers::pi * std::cos(2.0 * std::numbers::pi * x[2]);
 
-    gcon[{0, 0}] = -1.0 - 2.0 * bl_coord.r * irho2;
-    gcon[{0, 1}] = 2.0 * irho2;
+    g_con(0, 0) = -1.0 - 2.0 * bl_coord.r * irho2;
+    g_con(0, 1) = 2.0 * irho2;
 
-    gcon[{1, 0}] = gcon[{0, 1}].value();
-    gcon[{1, 1}] = irho2 * (bl_coord.r * (bl_coord.r - 2.0) + header_.a * header_.a) / (bl_coord.r * bl_coord.r);
-    gcon[{1, 3}] = header_.a * irho2 / bl_coord.r;
+    g_con(1, 0) = g_con(0, 1);
+    g_con(1, 1) = irho2 * (bl_coord.r * (bl_coord.r - 2.0) + header_.a * header_.a) / (bl_coord.r * bl_coord.r);
+    g_con(1, 3) = header_.a * irho2 / bl_coord.r;
 
-    gcon[{2, 2}] = irho2 / (hfac * hfac);
+    g_con(2, 2) = irho2 / (hfac * hfac);
 
-    gcon[{3, 1}] = gcon[{1, 3}].value();
-    gcon[{3, 3}] = irho2 / (sin_theta * sin_theta);
+    g_con(3, 1) = g_con(1, 3);
+    g_con(3, 3) = irho2 / (sin_theta * sin_theta);
 }
 
-void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double> &g_cov) const {
+void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double, 2> &g_cov) const {
     g_cov = 0.0;
 
     BLCoord bl_coord = get_bl_coord(x);
@@ -355,19 +354,19 @@ void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<dou
         std::numbers::pi + (1.0 - header_.h_slope) * std::numbers::pi * std::cos(2.0 * std::numbers::pi * x[2]);
     double pfac = 1.0;
 
-    g_cov[{0, 0}] = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
-    g_cov[{0, 1}] = (2.0 * bl_coord.r / rho2) * tfac * rfac;
-    g_cov[{0, 3}] = (-2.0 * header_.a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
+    g_cov(0, 0) = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
+    g_cov(0, 1) = (2.0 * bl_coord.r / rho2) * tfac * rfac;
+    g_cov(0, 3) = (-2.0 * header_.a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
 
-    g_cov[{1, 0}] = g_cov[{0, 1}].value();
-    g_cov[{1, 1}] = (1.0 + 2.0 * bl_coord.r / rho2) * rfac * rfac;
-    g_cov[{1, 3}] = (-header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * rfac * pfac;
+    g_cov(1, 0) = g_cov(0, 1);
+    g_cov(1, 1) = (1.0 + 2.0 * bl_coord.r / rho2) * rfac * rfac;
+    g_cov(1, 3) = (-header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * rfac * pfac;
 
-    g_cov[{2, 2}] = rho2 * hfac * hfac;
+    g_cov(2, 2) = rho2 * hfac * hfac;
 
-    g_cov[{3, 0}] = g_cov[{0, 3}].value();
-    g_cov[{3, 1}] = g_cov[{1, 3}].value();
-    g_cov[{3, 3}] =
+    g_cov(3, 0) = g_cov(0, 3);
+    g_cov(3, 1) = g_cov(1, 3);
+    g_cov(3, 3) =
         sin_theta_2 * (rho2 + header_.a * header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * pfac * pfac;
 }
 
@@ -379,35 +378,35 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
 
     double v_con[consts::n_dim] = {
         0.0,
-        data_.u_1[{x_1, x_2}].value(),
-        data_.u_2[{x_1, x_2}].value(),
-        data_.u_3[{x_1, x_2}].value(),
+        data_.u_1(x_1, x_2),
+        data_.u_2(x_1, x_2),
+        data_.u_3(x_1, x_2),
     };
     double b[consts::n_dim] = {
         0.0,
-        data_.b_1[{x_1, x_2}].value(),
-        data_.b_2[{x_1, x_2}].value(),
-        data_.b_3[{x_1, x_2}].value(),
+        data_.b_1(x_1, x_2),
+        data_.b_2(x_1, x_2),
+        data_.b_3(x_1, x_2),
     };
 
-    result.n_e = data_.k_rho[{x_1, x_2}].value() * n_e_unit_;
-    result.theta_e = (data_.u[{x_1, x_2}].value() / result.n_e) * n_e_unit_ * theta_e_unit_;
+    result.n_e = data_.k_rho(x_1, x_2) * n_e_unit_;
+    result.theta_e = (data_.u(x_1, x_2) / result.n_e) * n_e_unit_ * theta_e_unit_;
 
     double v_dot_v = 0.0;
     for (int i = 1; i < consts::n_dim; ++i) {
         for (int j = 1; j < consts::n_dim; ++j) {
-            v_dot_v += geometry_.cov[{x_1, x_2, i, j}].value() * v_con[i] * v_con[j];
+            v_dot_v += geometry_.cov(x_1, x_2, i, j) * v_con[i] * v_con[j];
         }
     }
 
-    double v_fac = std::sqrt(-1.0 / geometry_.con[{x_1, x_2, 0, 0}].value() * (1.0 + std::abs(v_dot_v)));
+    double v_fac = std::sqrt(-1.0 / geometry_.con(x_1, x_2, 0, 0) * (1.0 + std::abs(v_dot_v)));
 
-    result.u_con[0] = -v_fac * geometry_.con[{x_1, x_2, 0, 0}].value();
+    result.u_con[0] = -v_fac * geometry_.con(x_1, x_2, 0, 0);
     for (int i = 1; i < consts::n_dim; ++i) {
-        result.u_con[i] = v_con[i] - v_fac * geometry_.con[{x_1, x_2, 0, i}].value();
+        result.u_con[i] = v_con[i] - v_fac * geometry_.con(x_1, x_2, 0, i);
     }
 
-    tetrads::lower(result.u_con, geometry_.cov[{x_1, x_2}], u_cov);
+    tetrads::lower(result.u_con, geometry_.cov(x_1, x_2), u_cov);
 
     double u_dot_b = 0.0;
     for (int i = 1; i < consts::n_dim; ++i) {
@@ -419,7 +418,7 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
         result.b_con[i] = (b[i] + result.u_con[i] * u_dot_b) / result.u_con[0];
     }
 
-    tetrads::lower(result.b_con, geometry_.cov[{x_1, x_2}], b_cov);
+    tetrads::lower(result.b_con, geometry_.cov(x_1, x_2), b_cov);
 
     result.b = std::sqrt(result.b_con[0] * b_cov[0] + result.b_con[1] * b_cov[1] + result.b_con[2] * b_cov[2] +
                          result.b_con[3] * b_cov[3]) *
@@ -429,7 +428,7 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
 }
 
 struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
-                                               const ndarray::NDArray<double> &g_cov) const {
+                                               const ndarray::NDArray<double, 2> &g_cov) const {
     struct FluidParams fluid_params;
 
     if (x[1] < header_.x_start[1] || x[1] > header_.x_stop[1] || x[2] < header_.x_start[2] ||
@@ -467,7 +466,7 @@ struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
         interp_scalar(data_.u_3, i, j, coeff),
     };
 
-    ndarray::NDArray<double> g_con({consts::n_dim, consts::n_dim});
+    ndarray::NDArray<double, 2> g_con({consts::n_dim, consts::n_dim});
 
     gcon_func(x, g_con);
 
@@ -475,16 +474,16 @@ struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
 
     for (int i = 1; i < consts::n_dim; ++i) {
         for (int j = 1; j < consts::n_dim; ++j) {
-            v_dot_v += g_cov[{i, j}].value() * v_con[i] * v_con[j];
+            v_dot_v += g_cov(i, j) * v_con[i] * v_con[j];
         }
     }
 
-    double v_fac = std::sqrt(-1.0 / g_con[{0, 0}].value() * (1.0 + std::abs(v_dot_v)));
+    double v_fac = std::sqrt(-1.0 / g_con(0, 0) * (1.0 + std::abs(v_dot_v)));
 
-    fluid_params.u_con[0] = -v_fac * g_con[{0, 0}].value();
+    fluid_params.u_con[0] = -v_fac * g_con(0, 0);
 
     for (int i = 1; i < consts::n_dim; ++i) {
-        fluid_params.u_con[i] = v_con[i] - v_fac * g_con[{0, i}].value();
+        fluid_params.u_con[i] = v_con[i] - v_fac * g_con(0, i);
     }
     tetrads::lower(fluid_params.u_con, g_cov, fluid_params.u_cov);
 
@@ -549,11 +548,7 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
 
     Photon photon;
 
-    double x[consts::n_dim];
-    get_coord(zone.x_1, zone.x_2, x);
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon.x[i] = x[i];
-    }
+    get_coord(zone.x_1, zone.x_2, photon.x);
 
     auto fluid_zone = get_fluid_zone(zone.x_1, zone.x_2);
 
@@ -603,7 +598,7 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
             }
             b_hat[0] = 1.0;
         }
-        tetrads::make_tetrad(fluid_zone.u_con, b_hat, geometry_.cov[{zone.x_1, zone.x_2}], e_con, e_cov);
+        tetrads::make_tetrad(fluid_zone.u_con, b_hat, geometry_.cov(zone.x_1, zone.x_2), e_con, e_cov);
         zone.quit_flag = 0;
     }
 
@@ -641,7 +636,7 @@ double HARMModel::linear_interp_weight(double nu) {
     int i = static_cast<int>(d_i);
     d_i -= i;
 
-    return std::exp((1.0 - d_i) * weight_[{i}].value() + d_i * weight_[{i + 1}]);
+    return std::exp((1.0 - d_i) * weight_[i] + d_i * weight_[i + 1]);
 }
 
 std::tuple<Photon, bool> HARMModel::make_super_photon() {
@@ -654,6 +649,7 @@ std::tuple<Photon, bool> HARMModel::make_super_photon() {
     --zone.num_to_gen;
 
     bool quit = zone.x_1 == static_cast<int>(header_.n[0]);
+    spdlog::debug("zone {} {}", zone.x_1, zone.x_2);
 
     Photon photon;
     if (!quit) {
@@ -674,7 +670,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
     static const double d_tau_k =
         2.0 * std::numbers::pi * l_unit_ / (consts::me * consts::cl * consts::cl / consts::hbar);
 
-    ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+    ndarray::NDArray<double, 2> g_cov({consts::n_dim, consts::n_dim});
 
     gcov_func(photon.x, g_cov);
     auto fluid_params = get_fluid_params(photon.x, g_cov);
@@ -711,7 +707,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
         }
 
         /* allow photon to interact with matter */
-        ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+        ndarray::NDArray<double, 2> g_cov({consts::n_dim, consts::n_dim});
         gcov_func(photon.x, g_cov);
         auto fluid_params = get_fluid_params(photon.x, g_cov);
 
@@ -858,7 +854,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
 void HARMModel::scatter_super_photon(struct Photon &photon,
                                      struct Photon &photon_2,
                                      const struct FluidParams &fluid_params,
-                                     const ndarray::NDArray<double> &g_cov,
+                                     const ndarray::NDArray<double, 2> &g_cov,
                                      double b_unit) const {
     if (photon.k[0] > 1.0e5 || photon.k[0] < 0.0 || std::isnan(photon.k[0]) || std::isnan(photon.k[1]) ||
         std::isnan(photon.k[3])) {
@@ -1022,11 +1018,11 @@ void HARMModel::push_photon(struct Photon &photon, double dl, int n) {
 
     std::copy(std::begin(k), std::end(k), std::begin(photon.k));
 
-    ndarray::NDArray<double> g_cov({consts::n_dim, consts::n_dim});
+    ndarray::NDArray<double, 2> g_cov({consts::n_dim, consts::n_dim});
     gcov_func(photon.x, g_cov);
 
-    double e_1 = -(photon.k[0] * g_cov[{0, 0}].value() + photon.k[1] * g_cov[{0, 1}].value() +
-                   photon.k[2] * g_cov[{0, 2}].value() + photon.k[3] * g_cov[{0, 3}].value());
+    double e_1 = -(photon.k[0] * g_cov(0, 0) + photon.k[1] * g_cov(0, 1) + photon.k[2] * g_cov(0, 2) +
+                   photon.k[3] * g_cov(0, 3));
 
     double err_e = std::abs((e_1 - photon.e_0_s) / photon.e_0_s);
 
@@ -1117,18 +1113,19 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
     double dn_max = 0.0;
 
     if (l >= consts::nint) {
+        spdlog::warn("outside of nint table range: {}", fluid_zone.b * fluid_zone.theta_e * fluid_zone.theta_e);
         for (int i = 0; i <= consts::n_e_samp; ++i) {
             double dn = jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, std::exp(x_2 * d_l_nu + l_nu_min), f_) /
-                        (std::exp(weight_[{i}].value()) + 1.0e-100);
+                        (std::exp(weight_[i]) + 1.0e-100);
             if (dn > dn_max) {
                 dn_max = dn;
             }
 
             ninterp += d_l_nu * dn;
         }
-    } else if (!std::isinf(nint_[{l}].value()) && !std::isinf(nint_[{l + 1}].value())) {
-        ninterp = std::exp((1.0 - d_l) * nint_[{l}].value() + d_l * nint_[{l + 1}].value());
-        dn_max = std::exp((1.0 - d_l) * dndlnu_max_[{l}].value() + d_l * dndlnu_max_[{l + 1}].value());
+    } else if (!std::isinf(nint_[l]) && !std::isinf(nint_[l + 1])) {
+        ninterp = std::exp((1.0 - d_l) * nint_[l] + d_l * nint_[l + 1]);
+        dn_max = std::exp((1.0 - d_l) * dndlnu_max_[l] + d_l * dndlnu_max_[l + 1]);
     }
 
     double k2 = jnu_mixed::k2_eval(fluid_zone.theta_e, k2_);
@@ -1137,8 +1134,8 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
         return {0.0, 0.0};
     }
 
-    double nz = geometry_.det[{x_1, x_2}].value() * fluid_zone.n_e * fluid_zone.b * fluid_zone.theta_e *
-                fluid_zone.theta_e * ninterp / k2;
+    double nz = geometry_.det(x_1, x_2) * fluid_zone.n_e * fluid_zone.b * fluid_zone.theta_e * fluid_zone.theta_e *
+                ninterp / k2;
 
     if (nz > photon_n_ * std::log(consts::nu_max / consts::nu_min)) {
         return {0.0, 0.0};
@@ -1239,19 +1236,19 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[0][0][2] = -a2 * r1 * s2th * dthdx2 * irho22;
     lconn[0][0][3] = -2.0 * a * r1sth2 * fac1_rho23;
 
-    // lconn[0][1][0] = lconn[0][0][1];
+    lconn[0][1][0] = lconn[0][0][1];
     lconn[0][1][1] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
     lconn[0][1][2] = -a2 * r2 * s2th * dthdx2 * irho22;
     lconn[0][1][3] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
 
-    // lconn[0][2][0] = lconn[0][0][2];
-    // lconn[0][2][1] = lconn[0][1][2];
+    lconn[0][2][0] = lconn[0][0][2];
+    lconn[0][2][1] = lconn[0][1][2];
     lconn[0][2][2] = -2.0 * r2 * dthdx22 * irho2;
     lconn[0][2][3] = a3 * r1sth2 * s2th * dthdx2 * irho22;
 
-    // lconn[0][3][0] = lconn[0][0][3];
-    // lconn[0][3][1] = lconn[0][1][3];
-    // lconn[0][3][2] = lconn[0][2][3];
+    lconn[0][3][0] = lconn[0][0][3];
+    lconn[0][3][1] = lconn[0][1][3];
+    lconn[0][3][2] = lconn[0][2][3];
     lconn[0][3][3] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
 
     lconn[1][0][0] = fac3 * fac1 / (r1 * rho23);
@@ -1259,7 +1256,7 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[1][0][2] = 0.0;
     lconn[1][0][3] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
 
-    // lconn[1][1][0] = lconn[1][0][1];
+    lconn[1][1][0] = lconn[1][0][1];
     lconn[1][1][1] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 +
                                                             r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
                      irho23;
@@ -1268,14 +1265,14 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
                      (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
                      irho23;
 
-    // lconn[1][2][0] = lconn[1][0][2];
-    // lconn[1][2][1] = lconn[1][1][2];
+    lconn[1][2][0] = lconn[1][0][2];
+    lconn[1][2][1] = lconn[1][1][2];
     lconn[1][2][2] = -fac3 * dthdx22 * irho2;
     lconn[1][2][3] = 0.0;
 
-    // lconn[1][3][0] = lconn[1][0][3];
-    // lconn[1][3][1] = lconn[1][1][3];
-    // lconn[1][3][2] = lconn[1][2][3];
+    lconn[1][3][0] = lconn[1][0][3];
+    lconn[1][3][1] = lconn[1][1][3];
+    lconn[1][3][2] = lconn[1][2][3];
     lconn[1][3][3] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
 
     lconn[2][0][0] = -a2 * r1 * s2th * irho23_dthdx2;
@@ -1283,21 +1280,21 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[2][0][2] = 0.0;
     lconn[2][0][3] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
 
-    // lconn[2][1][0] = lconn[2][0][1];
+    lconn[2][1][0] = lconn[2][0][1];
     lconn[2][1][1] = r2 * lconn[2][0][0];
     lconn[2][1][2] = r2 * irho2;
     lconn[2][1][3] =
         (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1sth2))) *
         irho23_dthdx2;
 
-    // lconn[2][2][0] = lconn[2][0][2];
-    // lconn[2][2][1] = lconn[2][1][2];
+    lconn[2][2][0] = lconn[2][0][2];
+    lconn[2][2][1] = lconn[2][1][2];
     lconn[2][2][2] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
     lconn[2][2][3] = 0.0;
 
-    // lconn[2][3][0] = lconn[2][0][3];
-    // lconn[2][3][1] = lconn[2][1][3];
-    // lconn[2][3][2] = lconn[2][2][3];
+    lconn[2][3][0] = lconn[2][0][3];
+    lconn[2][3][1] = lconn[2][1][3];
+    lconn[2][3][2] = lconn[2][2][3];
     lconn[2][3][3] =
         -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
 
@@ -1306,19 +1303,19 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[3][0][2] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
     lconn[3][0][3] = -a2sth2 * fac1_rho23;
 
-    // lconn[3][1][0] = lconn[3][0][1];
+    lconn[3][1][0] = lconn[3][0][1];
     lconn[3][1][1] = a * r2 * fac1_rho23;
     lconn[3][1][2] = -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
     lconn[3][1][3] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
 
-    // lconn[3][2][0] = lconn[3][0][2];
-    // lconn[3][2][1] = lconn[3][1][2];
+    lconn[3][2][0] = lconn[3][0][2];
+    lconn[3][2][1] = lconn[3][1][2];
     lconn[3][2][2] = -a * r1 * dthdx22 * irho2;
     lconn[3][2][3] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
 
-    // lconn[3][3][0] = lconn[3][0][3];
-    // lconn[3][3][1] = lconn[3][1][3];
-    // lconn[3][3][2] = lconn[3][2][3];
+    lconn[3][3][0] = lconn[3][0][3];
+    lconn[3][3][1] = lconn[3][1][3];
+    lconn[3][3][2] = lconn[3][2][3];
     lconn[3][3][3] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
 }
 
@@ -1405,30 +1402,31 @@ void HARMModel::get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const {
     x[3] = header_.x_start[3];
 }
 
-static double interp_scalar(ndarray::NDArray<double> var, int i, int j, const double (&coeff)[consts::n_dim]) {
+static double
+interp_scalar(const ndarray::NDArray<double, 2> &var, int i, int j, const double (&coeff)[consts::n_dim]) {
     /* clang-format off */
     return (
-        var[{i, j}].value() * coeff[0] +
-        var[{i, j + 1}].value() * coeff[1] +
-        var[{i + 1, j}].value() * coeff[2] +
-        var[{i + 1, j + 1}].value() * coeff[3]
+        var(i    , j    ) * coeff[0] +
+        var(i    , j + 1) * coeff[1] +
+        var(i + 1, j    ) * coeff[2] +
+        var(i + 1, j + 1) * coeff[3]
     );
     /* clang-format on */
 }
 
 static void boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]) {
     double g = u[0];
-    double v_ = std::sqrt(std::abs(1. - 1. / (g * g)));
+    double v_ = std::sqrt(std::abs(1.0 - 1.0 / (g * g)));
     double n1 = u[1] / (g * v_ + consts::eps);
     double n2 = u[2] / (g * v_ + consts::eps);
     double n3 = u[3] / (g * v_ + consts::eps);
-    double gm1 = g - 1.;
+    double gm1 = g - 1.0;
 
     /* general Lorentz boost into frame u from lab frame */
     vp[0] = u[0] * v[0] - u[1] * v[1] - u[2] * v[2] - u[3] * v[3];
-    vp[1] = -u[1] * v[0] + (1. + n1 * n1 * gm1) * v[1] + n1 * n2 * gm1 * v[2] + n1 * n3 * gm1 * v[3];
-    vp[2] = -u[2] * v[0] + n2 * n1 * gm1 * v[1] + (1. + n2 * n2 * gm1) * v[2] + n2 * n3 * gm1 * v[3];
-    vp[3] = -u[3] * v[0] + n3 * n1 * gm1 * v[1] + n3 * n2 * gm1 * v[2] + (1. + n3 * n3 * gm1) * v[3];
+    vp[1] = -u[1] * v[0] + (1.0 + n1 * n1 * gm1) * v[1] + n1 * n2 * gm1 * v[2] + n1 * n3 * gm1 * v[3];
+    vp[2] = -u[2] * v[0] + n2 * n1 * gm1 * v[1] + (1.0 + n2 * n2 * gm1) * v[2] + n2 * n3 * gm1 * v[3];
+    vp[3] = -u[3] * v[0] + n3 * n1 * gm1 * v[1] + n3 * n2 * gm1 * v[2] + (1.0 + n3 * n3 * gm1) * v[3];
 }
 
 }; /* namespace harm */

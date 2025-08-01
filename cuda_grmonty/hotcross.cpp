@@ -31,7 +31,7 @@ static double dnd_gamma_e(double theta_e, double gamma_e);
 
 static double boostcross(double w, double mu_e, double gamma_e);
 
-void init_table(ndarray::NDArray<double> &table) {
+void init_table(ndarray::NDArray<double, 2> &table) {
     spdlog::info("Initializing HARM model hotcross");
 
     static const double l_min_w = std::log10(consts::hotcross::min_w);
@@ -45,14 +45,14 @@ void init_table(ndarray::NDArray<double> &table) {
             double l_w = l_min_w + i * d_l_w;
             double l_t = l_min_t + j * d_l_t;
 
-            table[{i, j}] = std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
+            table(i, j) = std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
         }
     }
 
     spdlog::info("Initializing HARM model hotcross done");
 }
 
-double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double> &hotcross_table) {
+double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table) {
     static const double l_min_w = std::log10(consts::hotcross::min_w);
     static const double l_min_t = std::log10(consts::hotcross::min_t);
     static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
@@ -78,10 +78,8 @@ double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray
     double d_i = (l_w - l_min_w) / d_l_w - i;
     double d_j = (l_t - l_min_t) / d_l_t - j;
 
-    double l_cross = (1.0 - d_i) * (1.0 - d_j) * hotcross_table[{i, j}].value() +
-                     d_i * (1.0 - d_j) * hotcross_table[{i + 1, j}].value() +
-                     (1.0 - d_i) * d_j * hotcross_table[{i, j + 1}].value() +
-                     d_i * d_j * hotcross_table[{i + 1, j + 1}].value();
+    double l_cross = (1.0 - d_i) * (1.0 - d_j) * hotcross_table(i, j) + d_i * (1.0 - d_j) * hotcross_table(i + 1, j) +
+                     (1.0 - d_i) * d_j * hotcross_table(i, j + 1) + d_i * d_j * hotcross_table(i + 1, j + 1);
 
     return std::pow(10, l_cross);
 }
