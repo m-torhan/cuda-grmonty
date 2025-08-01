@@ -18,10 +18,14 @@ namespace radiation {
 
 static double b_nu_inv(double nu, double theta_e);
 
-static double
-jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const ndarray::NDArray<double> &k2_table);
+static double jnu_inv(double nu,
+                      double theta_e,
+                      double n_e,
+                      double b,
+                      double theta,
+                      const std::array<double, consts::n_e_samp + 1> &k2_table);
 
-static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double> &hotcross_table);
+static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table);
 
 double bk_angle(const double (&x)[consts::n_dim],
                 const double (&k)[consts::n_dim],
@@ -67,14 +71,18 @@ fluid_nu(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim], con
     return energy * consts::me * consts::cl * consts::cl / consts::hpl;
 }
 
-double alpha_inv_scatt(double nu, double theta_e, double n_e, const ndarray::NDArray<double> &hotcross_table) {
+double alpha_inv_scatt(double nu, double theta_e, double n_e, const ndarray::NDArray<double, 2> &hotcross_table) {
     double kappa = kappa_es(nu, theta_e, hotcross_table);
 
     return nu * kappa * n_e * consts::mp;
 }
 
-double
-alpha_inv_abs(double nu, double theta_e, double n_e, double b, double theta, const ndarray::NDArray<double> &k2_table) {
+double alpha_inv_abs(double nu,
+                     double theta_e,
+                     double n_e,
+                     double b,
+                     double theta,
+                     const std::array<double, consts::n_e_samp + 1> &k2_table) {
     double j = jnu_inv(nu, theta_e, n_e, b, theta, k2_table);
     double b_nu = b_nu_inv(nu, theta_e);
 
@@ -91,14 +99,18 @@ static double b_nu_inv(double nu, double theta_e) {
     return (2.0 * consts::hpl / (consts::cl * consts::cl)) / (std::exp(x) - 1.0);
 }
 
-static double
-jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const ndarray::NDArray<double> &k2_table) {
+static double jnu_inv(double nu,
+                      double theta_e,
+                      double n_e,
+                      double b,
+                      double theta,
+                      const std::array<double, consts::n_e_samp + 1> &k2_table) {
     double j = jnu_mixed::synch(nu, n_e, theta_e, b, theta, k2_table);
 
     return j / (nu * nu);
 }
 
-static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double> &hotcross_table) {
+static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table) {
     double e_g = consts::hpl * nu / (consts::me * consts::cl * consts::cl);
 
     return hotcross::total_compton_cross_lkup(e_g, theta_e, hotcross_table) / consts::mp;

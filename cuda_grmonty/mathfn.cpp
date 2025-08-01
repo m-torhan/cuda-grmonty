@@ -30,8 +30,8 @@ double bessel_k_n(int n, double x) {
     /* Recurrence:
      * K_{n+1}(x) = (2n / x) * K_n(x) + K_{n-1}(x)
      */
-    double k_m2 = std::cyl_bessel_k(0, x); // K_0
-    double k_m1 = std::cyl_bessel_k(1, x); // K_1
+    double k_m2 = std::cyl_bessel_k(0, x); /* K_0 */
+    double k_m1 = std::cyl_bessel_k(1, x); /* K_1 */
     double k_n = 0.0;
 
     for (int k = 1; k < n; ++k) {

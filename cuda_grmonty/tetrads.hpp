@@ -21,10 +21,12 @@ void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim],
 
 void make_tetrad(const double (&u_con)[consts::n_dim],
                  double (&trial)[consts::n_dim],
-                 const ndarray::NDArray<double> &g_cov,
+                 const ndarray::NDArray<double, 2> &g_cov,
                  double (&e_con)[consts::n_dim][consts::n_dim],
                  double (&e_cov)[consts::n_dim][consts::n_dim]);
 
-void lower(const double (&u_con)[consts::n_dim], const ndarray::NDArray<double> &g_cov, double (&u_cov)[consts::n_dim]);
+void lower(const double (&u_con)[consts::n_dim],
+           const ndarray::NDArray<double, 2> &g_cov,
+           double (&u_cov)[consts::n_dim]);
 
 }; /* namespace tetrads */
