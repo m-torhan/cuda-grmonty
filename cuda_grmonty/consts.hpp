@@ -36,21 +36,21 @@ constexpr double etol = 1.0e-3;
 constexpr int max_iter = 2;
 constexpr int max_n_step = 1280000;
 
-constexpr double ee = 4.80320680e-10;                /* electron charge */
-constexpr double cl = 2.99792458e10;                 /* speed of light */
-constexpr double me = 9.1093826e-28;                 /* electron mass */
-constexpr double mp = 1.67262171e-24;                /* proton mass */
-constexpr double mn = 1.67492728e-24;                /* neutron mass */
-constexpr double amu = 1.66053886e-24;               /* atomic mass unit */
-constexpr double hpl = 6.6260693e-27;                /* Planck constant */
-constexpr double hbar = hpl / 2. * std::numbers::pi; /* Planck's consant / 2pi */
-constexpr double kbol = 1.3806505e-16;               /* Boltzmann constant */
-constexpr double g_newt = 6.6742e-8;                 /* Gravitational constant */
-constexpr double sif = 5.670400e-5;                  /* Stefan-Boltzmann constant */
-constexpr double rgas = 8.3143e7;                    /* erg K^-1 mole^-1: ideal gas const */
-constexpr double ev = 1.60217653e-12;                /* electron volt in erg */
-constexpr double sigma_thomson = 0.665245873e-24;    /* Thomson cross section in cm^2 */
-constexpr double jy = 1.e-23;                        /* Jansky flux/freq. uni; in cgs */
+constexpr double ee = 4.80320680e-10;                  /* electron charge */
+constexpr double cl = 2.99792458e10;                   /* speed of light */
+constexpr double me = 9.1093826e-28;                   /* electron mass */
+constexpr double mp = 1.67262171e-24;                  /* proton mass */
+constexpr double mn = 1.67492728e-24;                  /* neutron mass */
+constexpr double amu = 1.66053886e-24;                 /* atomic mass unit */
+constexpr double hpl = 6.6260693e-27;                  /* Planck constant */
+constexpr double hbar = hpl / (2. * std::numbers::pi); /* Planck's consant / 2pi */
+constexpr double kbol = 1.3806505e-16;                 /* Boltzmann constant */
+constexpr double g_newt = 6.6742e-8;                   /* Gravitational constant */
+constexpr double sif = 5.670400e-5;                    /* Stefan-Boltzmann constant */
+constexpr double rgas = 8.3143e7;                      /* erg K^-1 mole^-1: ideal gas const */
+constexpr double ev = 1.60217653e-12;                  /* electron volt in erg */
+constexpr double sigma_thomson = 0.665245873e-24;      /* Thomson cross section in cm^2 */
+constexpr double jy = 1.e-23;                          /* Jansky flux/freq. uni; in cgs */
 
 constexpr double pc = 3.085678e18;      /* parsec */
 constexpr double au = 1.49597870691e13; /* Astronomical Unit */
@@ -101,5 +101,12 @@ namespace super_photon {
 constexpr double jcst = std::numbers::sqrt2 * ee * ee * ee / (27.0 * me * cl * cl);
 
 }; /* namespace super_photon */
+
+namespace spectrum {
+
+constexpr double d_l_e = 0.25;          /* bin width */
+const double l_e_0 = std::log(1.0e-12); /* location of first bin, in electron rest-mass units */
+
+}; /* namespace spectrum */
 
 }; /* namespace consts */
