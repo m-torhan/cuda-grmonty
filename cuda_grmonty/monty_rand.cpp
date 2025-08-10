@@ -17,6 +17,7 @@ void init(int seed) { rd = std::mt19937(seed); }
 double rand() {
     std::uniform_real_distribution<double> dist(0, 1);
     return dist(rd);
+    // return 0.1;
 }
 
 }; /* namespace monty_rand */

@@ -370,6 +370,12 @@ void HARMModel::gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<dou
         sin_theta_2 * (rho2 + header_.a * header_.a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * pfac * pfac;
 }
 
+double HARMModel::d_omega_func(double x2i, double x2f) const {
+    return 2.0 * std::numbers::pi *
+           (-std::cos(std::numbers::pi * x2f + 0.5 * (1.0 - header_.h_slope) * std::sin(2 * std::numbers::pi * x2f)) +
+            std::cos(std::numbers::pi * x2i + 0.5 * (1.0 - header_.h_slope) * std::sin(2 * std::numbers::pi * x2i)));
+}
+
 struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
     struct FluidZone result;
 
@@ -446,7 +452,7 @@ struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
         del_i * del_j,
     };
 
-    double rho = interp_scalar(data_.b_1, i, j, coeff);
+    double rho = interp_scalar(data_.k_rho, i, j, coeff);
     double uu = interp_scalar(data_.u, i, j, coeff);
 
     fluid_params.n_e = rho * n_e_unit_;
@@ -515,7 +521,7 @@ struct Zone HARMModel::get_zone() {
         zone_x_2_ = 0;
         ++zone_x_1_;
         if (zone_x_1_ >= static_cast<int>(header_.n[0])) {
-            num_to_gen = 1;
+            zone.num_to_gen = 1;
             zone.x_1 = static_cast<int>(header_.n[0]);
             return zone;
         }
@@ -649,7 +655,6 @@ std::tuple<Photon, bool> HARMModel::make_super_photon() {
     --zone.num_to_gen;
 
     bool quit = zone.x_1 == static_cast<int>(header_.n[0]);
-    spdlog::debug("zone {} {}", zone.x_1, zone.x_2);
 
     Photon photon;
     if (!quit) {
@@ -688,14 +693,12 @@ void HARMModel::track_super_photon(struct Photon &photon) {
     int n_step = 0;
 
     while (!stop_criterion(photon)) {
-        double x[consts::n_dim];
-        double k[consts::n_dim];
-        double d_k[consts::n_dim];
-        double e_0 = photon.e_0_s;
+        struct Photon photon_2;
 
-        std::copy(std::begin(photon.x), std::end(photon.x), std::begin(x));
-        std::copy(std::begin(photon.k), std::end(photon.k), std::begin(k));
-        std::copy(std::begin(photon.dkdlam), std::end(photon.dkdlam), std::begin(d_k));
+        std::copy(std::begin(photon.x), std::end(photon.x), std::begin(photon_2.x));
+        std::copy(std::begin(photon.k), std::end(photon.k), std::begin(photon_2.k));
+        std::copy(std::begin(photon.dkdlam), std::end(photon.dkdlam), std::begin(photon_2.dkdlam));
+        photon_2.e_0_s = photon.e_0_s;
 
         double dl = step_size(photon.x, photon.k);
 
@@ -709,12 +712,10 @@ void HARMModel::track_super_photon(struct Photon &photon) {
         /* allow photon to interact with matter */
         ndarray::NDArray<double, 2> g_cov({consts::n_dim, consts::n_dim});
         gcov_func(photon.x, g_cov);
-        auto fluid_params = get_fluid_params(photon.x, g_cov);
+        fluid_params = get_fluid_params(photon.x, g_cov);
 
         if (alpha_absi > 0.0 || alpha_scatti > 0.0 || fluid_params.n_e > 0.0) {
             bool bound_flag = false;
-            double theta;
-            double nu;
 
             if (fluid_params.n_e == 0.0) {
                 bound_flag = true;
@@ -726,7 +727,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
                 nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
 
                 if (std::isnan(nu)) {
-                    spdlog::error("nu is nan");
+                    spdlog::error("nu is nan {} {} {} {}", photon.x[0], photon.x[1], photon.x[2], photon.x[3]);
                 }
             }
 
@@ -735,7 +736,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
             double bias;
 
             if (bound_flag || nu < 0.0) {
-                d_tau_scatt = 0.5 * alpha_scatti + d_tau_k * dl;
+                d_tau_scatt = 0.5 * alpha_scatti * d_tau_k * dl;
                 d_tau_abs = 0.5 * alpha_absi * d_tau_k * dl;
                 alpha_scatti = 0.0;
                 alpha_absi = 0.0;
@@ -759,10 +760,10 @@ void HARMModel::track_super_photon(struct Photon &photon) {
 
             double x1 = -std::log(monty_rand::rand());
 
-            struct Photon photon_2;
-            photon_2.w = photon.w / bias;
+            struct Photon photon_p;
+            photon_p.w = photon.w / bias;
 
-            if (bias * d_tau_scatt > x1 && photon_2.w > consts::weight_min) {
+            if (bias * d_tau_scatt > x1 && photon_p.w > consts::weight_min) {
                 double frac = x1 / (bias * d_tau_scatt);
 
                 /* apply absorption until scattering event */
@@ -776,7 +777,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
                 d_tau_scatt *= frac;
                 double d_tau = d_tau_abs + d_tau_scatt;
                 if (d_tau_abs < 1.0e-3) {
-                    photon.w = (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
+                    photon.w *= (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
                 } else {
                     photon.w *= std::exp(-d_tau);
                 }
@@ -784,24 +785,23 @@ void HARMModel::track_super_photon(struct Photon &photon) {
                 /* interpolate position and wave vector to scattering event */
                 push_photon(photon_2, dl * frac, 0);
 
-                std::copy(std::begin(x), std::end(x), std::begin(photon.x));
-                std::copy(std::begin(k), std::end(k), std::begin(photon.k));
-                std::copy(std::begin(d_k), std::end(d_k), std::begin(photon.dkdlam));
-                photon.e_0_s = e_0;
+                std::copy(std::begin(photon_2.x), std::end(photon_2.x), std::begin(photon.x));
+                std::copy(std::begin(photon_2.k), std::end(photon_2.k), std::begin(photon.k));
+                std::copy(std::begin(photon_2.dkdlam), std::end(photon_2.dkdlam), std::begin(photon.dkdlam));
+                photon.e_0_s = photon_2.e_0_s;
 
                 gcov_func(photon.x, g_cov);
-
-                auto fluid_params = get_fluid_params(photon.x, g_cov);
+                fluid_params = get_fluid_params(photon.x, g_cov);
 
                 if (fluid_params.n_e > 0.0) {
-                    scatter_super_photon(photon, photon_2, fluid_params, g_cov, b_unit_);
+                    scatter_super_photon(photon, photon_p, fluid_params, g_cov, b_unit_);
 
                     if (photon.w < 1.0e-100) {
                         /* must have been a problem popping k back onto light cone */
                         return;
                     }
 
-                    track_super_photon(photon_2);
+                    track_super_photon(photon_p);
                 }
 
                 theta = radiation::bk_angle(
@@ -846,7 +846,7 @@ void HARMModel::track_super_photon(struct Photon &photon) {
         }
     }
 
-    if (record_criterion(photon) && n_step < consts::max_n_step) {
+    if (record_criterion(photon) && n_step <= consts::max_n_step) {
         record_super_photon(photon);
     }
 }
@@ -892,11 +892,44 @@ void HARMModel::scatter_super_photon(struct Photon &photon,
 
     double p[consts::n_dim];
     proba::sample_electron_distr_p(k_tetrad, p, fluid_params.theta_e);
+
+    double k_tetrad_p[consts::n_dim];
+    sample_scattered_photon(k_tetrad, p, k_tetrad_p);
+
+    tetrads::tetrad_to_coordinate(e_con, k_tetrad_p, photon_2.k);
+
+    if (std::isnan(photon_2.k[1])) {
+        photon_2.w = 0.0;
+        return;
+    }
+
+    double tmp_k[consts::n_dim];
+    k_tetrad_p[0] *= -1.0;
+    tetrads::tetrad_to_coordinate(e_cov, k_tetrad_p, tmp_k);
+
+    photon_2.e = -tmp_k[0];
+    photon_2.e_0_s = -tmp_k[0];
+    photon_2.l = tmp_k[3];
+    photon_2.tau_abs = 0.0;
+    photon_2.tau_scatt = 0.0;
+    photon_2.b_0 = fluid_params.b;
+
+    photon_2.x1i = photon.x[1];
+    photon_2.x2i = photon.x[2];
+    photon_2.x[0] = photon.x[0];
+    photon_2.x[1] = photon.x[1];
+    photon_2.x[2] = photon.x[2];
+    photon_2.x[3] = photon.x[3];
+
+    photon_2.n_e_0 = photon.n_e_0;
+    photon_2.theta_e_0 = photon.theta_e_0;
+    photon_2.e_0 = photon.e_0;
+    photon_2.n_scatt = photon.n_scatt + 1;
 }
 
 void HARMModel::sample_scattered_photon(const double (&k)[consts::n_dim],
                                         double (&p)[consts::n_dim],
-                                        double (&kp)[consts::n_dim]) {
+                                        double (&kp)[consts::n_dim]) const {
     double ke[consts::n_dim];
 
     boost(k, p, ke);
@@ -998,7 +1031,7 @@ void HARMModel::push_photon(struct Photon &photon, double dl, int n) {
         ++iter;
 
         double k_cont[consts::n_dim];
-        std::copy(std::begin(photon.k), std::end(photon.k), std::begin(k_cont));
+        std::copy(std::begin(k), std::end(k), std::begin(k_cont));
 
         err = 0.0;
 
@@ -1060,14 +1093,14 @@ void HARMModel::record_super_photon(const struct Photon &photon) {
     }
 
     double l_e = std::log(photon.e);
-    int i_e = static_cast<int>((l_e - l_e_0_) / d_l_e_ + 2.5) - 2;
+    int i_e = static_cast<int>((l_e - consts::spectrum::l_e_0) / consts::spectrum::d_l_e + 2.5) - 2;
 
     if (i_e < 0 || i_e >= consts::n_e_bins) {
         return;
     }
 
     ++n_super_photon_recorded_;
-    n_scatt_ += photon.n_scatt;
+    n_super_photon_scatt_ += photon.n_scatt;
 
     /* sum in photon */
     spectrum_[ix2][i_e].dNdlE += photon.w;
@@ -1146,10 +1179,15 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
 
 double HARMModel::bias_func(double t_e, double w) const {
     double max = 0.5 * w / consts::weight_min;
-    double avg_num_scatt = n_scatt_ / (1.0 * n_super_photon_recorded_ + 1.0);
+    double avg_num_scatt = n_super_photon_scatt_ / (1.0 * n_super_photon_recorded_ + 1.0);
     double bias = 100.0 * t_e * t_e / (bias_norm_ * max_tau_scatt_ * (avg_num_scatt + 2.0));
 
-    bias = std::clamp(bias, consts::tp_over_te, max);
+    if (bias < consts::tp_over_te) {
+        bias = consts::tp_over_te;
+    }
+    if (bias > max) {
+        bias = max;
+    }
 
     return bias / consts::tp_over_te;
 }
@@ -1236,19 +1274,19 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[0][0][2] = -a2 * r1 * s2th * dthdx2 * irho22;
     lconn[0][0][3] = -2.0 * a * r1sth2 * fac1_rho23;
 
-    lconn[0][1][0] = lconn[0][0][1];
+    /* lconn[0][1][0] = lconn[0][0][1]; */
     lconn[0][1][1] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
     lconn[0][1][2] = -a2 * r2 * s2th * dthdx2 * irho22;
     lconn[0][1][3] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
 
-    lconn[0][2][0] = lconn[0][0][2];
-    lconn[0][2][1] = lconn[0][1][2];
+    /* lconn[0][2][0] = lconn[0][0][2]; */
+    /* lconn[0][2][1] = lconn[0][1][2]; */
     lconn[0][2][2] = -2.0 * r2 * dthdx22 * irho2;
     lconn[0][2][3] = a3 * r1sth2 * s2th * dthdx2 * irho22;
 
-    lconn[0][3][0] = lconn[0][0][3];
-    lconn[0][3][1] = lconn[0][1][3];
-    lconn[0][3][2] = lconn[0][2][3];
+    /* lconn[0][3][0] = lconn[0][0][3]; */
+    /* lconn[0][3][1] = lconn[0][1][3]; */
+    /* lconn[0][3][2] = lconn[0][2][3]; */
     lconn[0][3][3] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
 
     lconn[1][0][0] = fac3 * fac1 / (r1 * rho23);
@@ -1256,7 +1294,7 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[1][0][2] = 0.0;
     lconn[1][0][3] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
 
-    lconn[1][1][0] = lconn[1][0][1];
+    /* lconn[1][1][0] = lconn[1][0][1]; */
     lconn[1][1][1] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 +
                                                             r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
                      irho23;
@@ -1265,14 +1303,14 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
                      (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
                      irho23;
 
-    lconn[1][2][0] = lconn[1][0][2];
-    lconn[1][2][1] = lconn[1][1][2];
+    /* lconn[1][2][0] = lconn[1][0][2]; */
+    /* lconn[1][2][1] = lconn[1][1][2]; */
     lconn[1][2][2] = -fac3 * dthdx22 * irho2;
     lconn[1][2][3] = 0.0;
 
-    lconn[1][3][0] = lconn[1][0][3];
-    lconn[1][3][1] = lconn[1][1][3];
-    lconn[1][3][2] = lconn[1][2][3];
+    /* lconn[1][3][0] = lconn[1][0][3]; */
+    /* lconn[1][3][1] = lconn[1][1][3]; */
+    /* lconn[1][3][2] = lconn[1][2][3]; */
     lconn[1][3][3] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
 
     lconn[2][0][0] = -a2 * r1 * s2th * irho23_dthdx2;
@@ -1280,21 +1318,21 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[2][0][2] = 0.0;
     lconn[2][0][3] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
 
-    lconn[2][1][0] = lconn[2][0][1];
+    /* lconn[2][1][0] = lconn[2][0][1]; */
     lconn[2][1][1] = r2 * lconn[2][0][0];
     lconn[2][1][2] = r2 * irho2;
     lconn[2][1][3] =
         (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1sth2))) *
         irho23_dthdx2;
 
-    lconn[2][2][0] = lconn[2][0][2];
-    lconn[2][2][1] = lconn[2][1][2];
+    /* lconn[2][2][0] = lconn[2][0][2]; */
+    /* lconn[2][2][1] = lconn[2][1][2]; */
     lconn[2][2][2] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
     lconn[2][2][3] = 0.0;
 
-    lconn[2][3][0] = lconn[2][0][3];
-    lconn[2][3][1] = lconn[2][1][3];
-    lconn[2][3][2] = lconn[2][2][3];
+    /* lconn[2][3][0] = lconn[2][0][3]; */
+    /* lconn[2][3][1] = lconn[2][1][3]; */
+    /* lconn[2][3][2] = lconn[2][2][3]; */
     lconn[2][3][3] =
         -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
 
@@ -1303,19 +1341,19 @@ void HARMModel::get_connection(const double (&x)[consts::n_dim],
     lconn[3][0][2] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
     lconn[3][0][3] = -a2sth2 * fac1_rho23;
 
-    lconn[3][1][0] = lconn[3][0][1];
+    /* lconn[3][1][0] = lconn[3][0][1]; */
     lconn[3][1][1] = a * r2 * fac1_rho23;
     lconn[3][1][2] = -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
     lconn[3][1][3] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
 
-    lconn[3][2][0] = lconn[3][0][2];
-    lconn[3][2][1] = lconn[3][1][2];
+    /* lconn[3][2][0] = lconn[3][0][2]; */
+    /* lconn[3][2][1] = lconn[3][1][2]; */
     lconn[3][2][2] = -a * r1 * dthdx22 * irho2;
     lconn[3][2][3] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
 
-    lconn[3][3][0] = lconn[3][0][3];
-    lconn[3][3][1] = lconn[3][1][3];
-    lconn[3][3][2] = lconn[3][2][3];
+    /* lconn[3][3][0] = lconn[3][0][3]; */
+    /* lconn[3][3][1] = lconn[3][1][3]; */
+    /* lconn[3][3][2] = lconn[3][2][3]; */
     lconn[3][3][3] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
 }
 
@@ -1343,10 +1381,12 @@ bool HARMModel::stop_criterion(struct Photon &photon) const {
     static const double x1_max = std::log(consts::r_max);
 
     if (photon.x[1] < x1_min) {
+        /* stop at event horizon */
         return true;
     }
 
     if (photon.x[1] > x1_max) {
+        /* stop at large distance */
         if (photon.w < consts::weight_min) {
             if (monty_rand::rand() <= 1.0 / consts::roulette) {
                 photon.w *= consts::roulette;
@@ -1378,14 +1418,73 @@ double HARMModel::step_size(const double (&x)[consts::n_dim], const double (&k)[
     static constexpr double eps = 0.04;
 
     double dl_x_1 = eps * x[1] / (std::abs(k[1]) + consts::eps);
-    double dl_x_2 = eps * std::min(x[2], header_.x_start[2] - x[2]) / (std::abs(k[2]) + consts::eps);
-    double dl_x_3 = eps / (std::abs(k[3]) / consts::eps);
+    double dl_x_2 = eps * std::min(x[2], header_.x_stop[2] - x[2]) / (std::abs(k[2]) + consts::eps);
+    double dl_x_3 = eps / (std::abs(k[3] + consts::eps));
 
     double i_dl_x_1 = 1.0 / (std::abs(dl_x_1) + consts::eps);
     double i_dl_x_2 = 1.0 / (std::abs(dl_x_2) + consts::eps);
     double i_dl_x_3 = 1.0 / (std::abs(dl_x_3) + consts::eps);
 
     return 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
+}
+
+void HARMModel::report_spectrum(int n_super_photon_created, std::string filepath) {
+    const double dx2 = (header_.x_stop[2] - header_.x_start[2]) / (2 * consts::n_th_bins);
+
+    spdlog::info("Writing spectrum to file {}", filepath);
+
+    if (std::filesystem::exists(filepath)) {
+        spdlog::warn("File {} already exists, overwriting", filepath);
+    }
+    std::ofstream spectrum_file(filepath);
+    if (!spectrum_file.is_open()) {
+        spdlog::error("Cannot open file {}", filepath);
+        return;
+    }
+
+    double max_tau_scatt = 0.0;
+    double l = 0.0;
+
+    for (int i = 0; i < consts::n_e_bins; ++i) {
+        spectrum_file << std::format("{:10.5g} ",
+                                     (i * consts::spectrum::d_l_e + consts::spectrum::l_e_0) / std::numbers::ln10);
+
+        for (int j = 0; j < consts::n_th_bins; ++j) {
+            double d_omega = 2.0 * d_omega_func(j * dx2, (j + 1) * dx2);
+
+            double nu_lnu = (consts::me * consts::cl * consts::cl) * (4.0 * std::numbers::pi / d_omega) *
+                            (1.0 / consts::spectrum::d_l_e);
+
+            nu_lnu *= spectrum_[j][i].dEdlE;
+            nu_lnu /= consts::l_sun;
+
+            double tau_scatt = spectrum_[j][i].tau_scatt / (spectrum_[j][i].dNdlE + consts::eps);
+
+            spectrum_file << std::format("{:10.5g} ", nu_lnu);
+            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].tau_abs / (spectrum_[j][i].dNdlE + consts::eps));
+            spectrum_file << std::format("{:10.5g} ", tau_scatt);
+            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].X1iav / (spectrum_[j][i].dNdlE + consts::eps));
+            spectrum_file << std::format(
+                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].X2isq / (spectrum_[j][i].dNdlE + consts::eps))));
+            spectrum_file << std::format(
+                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].X3fsq / (spectrum_[j][i].dNdlE + consts::eps))));
+
+            if (tau_scatt > max_tau_scatt) {
+                max_tau_scatt = tau_scatt;
+            }
+
+            l += nu_lnu * d_omega * consts::spectrum::d_l_e;
+        }
+        spectrum_file << std::endl;
+    }
+
+    spectrum_file.close();
+
+    spdlog::info("Writing spectrum done");
+
+    spdlog::info("Spectrum:");
+    spdlog::info("\tlumosity: {}", l);
+    spdlog::info("\tmax_tau_scatt: {}", max_tau_scatt);
 }
 
 struct BLCoord HARMModel::get_bl_coord(const double (&x)[consts::n_dim]) const {

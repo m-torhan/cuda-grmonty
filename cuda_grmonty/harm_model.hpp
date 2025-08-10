@@ -155,6 +155,8 @@ public:
 
     void gcov_func(const double (&x)[consts::n_dim], ndarray::NDArray<double, 2> &g_cov) const;
 
+    double d_omega_func(double x2i, double x2f) const;
+
     struct FluidZone get_fluid_zone(int x_1, int x_2) const;
 
     struct FluidParams get_fluid_params(const double (&x)[consts::n_dim],
@@ -179,8 +181,9 @@ public:
                               const ndarray::NDArray<double, 2> &g_cov,
                               double b_unit) const;
 
-    void
-    sample_scattered_photon(const double (&k)[consts::n_dim], double (&p)[consts::n_dim], double (&kp)[consts::n_dim]);
+    void sample_scattered_photon(const double (&k)[consts::n_dim],
+                                 double (&p)[consts::n_dim],
+                                 double (&kp)[consts::n_dim]) const;
 
     void push_photon(struct Photon &photon, double dl, int n);
 
@@ -203,6 +206,8 @@ public:
 
     double step_size(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim]);
 
+    void report_spectrum(int n_super_photon_created, std::string filepath);
+
     struct BLCoord get_bl_coord(const double (&x)[consts::n_dim]) const;
 
     void get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const;
@@ -211,6 +216,12 @@ public:
 
     const struct Data *get_data() const { return &data_; }
 
+    uint64_t get_n_super_photon_recorded() const { return n_super_photon_recorded_; }
+
+    uint64_t get_n_super_photon_scattered() const { return n_super_photon_scatt_; }
+
+    std::tuple<int, int> get_zone_x() const { return {zone_x_1_, zone_x_2_}; }
+
 private:
     struct Header header_;
     struct Data data_;
@@ -218,12 +229,8 @@ private:
     double bias_norm_;
     double rh_;
 
-    double n_scatt_;
-    double n_super_photon_recorded_;
-
-    /* spectral bin parameters */
-    double d_l_e_ = 0.25;              /* bin width */
-    double l_e_0_ = std::log(1.0e-12); /* location of first bin, in electron rest-mass units */
+    uint64_t n_super_photon_scatt_ = 0;
+    uint64_t n_super_photon_recorded_ = 0;
 
     int photon_n_;
     double mass_unit_;
@@ -238,7 +245,6 @@ private:
 
     int zone_x_1_ = 0;
     int zone_x_2_ = -1;
-    bool zone_flag_ = 0;
 
     struct Geometry geometry_;
     ndarray::NDArray<double, 2> hotcross_table_ =

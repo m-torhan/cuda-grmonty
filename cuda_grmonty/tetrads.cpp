@@ -161,7 +161,7 @@ static void project_out(double (&v_con_a)[consts::n_dim], double (&v_con_b)[cons
 
     for (int i = 0; i < consts::n_dim; ++i) {
         for (int j = 0; j < consts::n_dim; ++j) {
-            a_dot_b = v_con_a[i] * v_con_b[j] * g_cov(i, j);
+            a_dot_b += v_con_a[i] * v_con_b[j] * g_cov(i, j);
         }
     }
 
