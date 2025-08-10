@@ -110,8 +110,7 @@ std::tuple<double, double> sample_beta_distr(double theta_e) {
 }
 
 double sample_y_distr(double theta_e) {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
+    static std::mt19937 rd(123);
 
     double pi_3 = std::sqrt(std::numbers::pi) / 4.0;
     double pi_4 = std::sqrt(0.5 * theta_e) / 2.0;
@@ -144,7 +143,7 @@ double sample_y_distr(double theta_e) {
         }
 
         std::chi_squared_distribution<double> chi_sq(dof);
-        double x = chi_sq(gen);
+        double x = chi_sq(rd);
 
         y = std::sqrt(x / 2.0);
 
