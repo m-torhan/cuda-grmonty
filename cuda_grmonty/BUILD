@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cuda//cuda:defs.bzl", "cuda_library", "requires_cuda")
 
 package_group(
     name = "cuda_grmonty_internal",
@@ -11,6 +12,11 @@ package_group(
 
 package(
     default_visibility = ["//cuda_grmonty:cuda_grmonty_internal"],
+)
+
+config_setting(
+    name = "cuda_enabled",
+    values = {"define": "CUDA=true"},
 )
 
 cc_library(
@@ -48,7 +54,6 @@ cc_library(
     deps = [
         ":consts",
         ":linalg",
-        "@spdlog//:spdlog",
     ],
 )
 
@@ -68,10 +73,15 @@ cc_library(
     hdrs = ["integration.hpp"],
 )
 
-cc_library(
-    name = "mathfn",
-    srcs = ["mathfn.cpp"],
-    hdrs = ["mathfn.hpp"],
+cuda_library(
+    name = "cuda_hotcross",
+    srcs = ["hotcross.cu"],
+    hdrs = ["hotcross.cuh"],
+    deps = [
+        ":consts",
+        ":ndarray",
+    ],
+    target_compatible_with = requires_cuda(),
 )
 
 cc_library(
@@ -80,10 +90,12 @@ cc_library(
     hdrs = ["hotcross.hpp"],
     deps = [
         ":consts",
-        ":mathfn",
         ":ndarray",
         "@spdlog//:spdlog",
-    ],
+    ] + select({
+        ":cuda_enabled": [":cuda_hotcross"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -93,7 +105,6 @@ cc_library(
     deps = [
         ":consts",
         ":integration",
-        ":mathfn",
         ":ndarray",
         "@spdlog//:spdlog",
     ],

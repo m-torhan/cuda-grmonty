@@ -12,7 +12,6 @@
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/integration.hpp"
 #include "cuda_grmonty/jnu_mixed.hpp"
-#include "cuda_grmonty/mathfn.hpp"
 
 namespace jnu_mixed {
 
@@ -41,7 +40,7 @@ void init_emiss_tables(std::array<double, consts::n_e_samp + 1> &f, std::array<d
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
         double t = std::exp(i * d_l_t + l_min_t);
-        k2[i] = std::log(mathfn::bessel_k_n(2, 1.0 / t));
+        k2[i] = std::log(std::cyl_bessel_k(2, 1.0 / t));
     }
 
     spdlog::info("Initializing HARM model emission tables done");
