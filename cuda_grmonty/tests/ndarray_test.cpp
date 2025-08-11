@@ -123,6 +123,20 @@ TEST(NDArray, SetGetIndex) {
 }
 
 /**
+ * Tests whether data layout is proper (needed when copying data to/from CUDA).
+ */
+TEST(NDArray, DataLayout) {
+    ndarray::NDArray<int, 2> a({2, 3}, {0, 1, 2, 3, 4, 5});
+
+    ASSERT_EQ(0, a.data()[0]);
+    ASSERT_EQ(1, a.data()[1]);
+    ASSERT_EQ(2, a.data()[2]);
+    ASSERT_EQ(3, a.data()[3]);
+    ASSERT_EQ(4, a.data()[4]);
+    ASSERT_EQ(5, a.data()[5]);
+}
+
+/**
  * Tests assignment.
  */
 TEST(NDArray, Assign) {

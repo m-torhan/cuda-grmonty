@@ -40,6 +40,11 @@ HARMModel::HARMModel(int photon_n, double mass_unit) : photon_n_(photon_n), mass
     b_unit_ = consts::cl * std::sqrt(4.0 * std::numbers::pi * rho_unit_);
     n_e_unit_ = rho_unit_ / (consts::mp + consts::me);
     max_tau_scatt_ = 6.0 * l_unit_ * rho_unit_ * 0.4;
+    for (auto &row : spectrum_) {
+        for (auto &cell : row) {
+            cell = {};
+        }
+    }
 }
 
 void HARMModel::read_file(std::string filepath) {
@@ -1481,8 +1486,6 @@ void HARMModel::report_spectrum(int n_super_photon_created, std::string filepath
     spectrum_file.close();
 
     spdlog::info("Writing spectrum done");
-
-    spdlog::info("Spectrum:");
     spdlog::info("\tlumosity: {}", l);
     spdlog::info("\tmax_tau_scatt: {}", max_tau_scatt);
 }
