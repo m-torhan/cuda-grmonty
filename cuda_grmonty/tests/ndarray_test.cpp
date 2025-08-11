@@ -123,44 +123,18 @@ TEST(NDArray, SetGetIndex) {
 }
 
 /**
- * Tests setting single values at index with negative values.
+ * Tests whether data layout is proper (needed when copying data to/from CUDA).
  */
-TEST(NDArray, SetIndexNegative) {
-    ndarray::NDArray<int, 2> a({2, 3});
+TEST(NDArray, DataLayout) {
+    ndarray::NDArray<int, 2> a({2, 3}, {0, 1, 2, 3, 4, 5});
 
-    a(-1, -3) = 1;
-
-    ASSERT_EQ(1, a(1, 0));
+    ASSERT_EQ(0, a.data()[0]);
+    ASSERT_EQ(1, a.data()[1]);
+    ASSERT_EQ(2, a.data()[2]);
+    ASSERT_EQ(3, a.data()[3]);
+    ASSERT_EQ(4, a.data()[4]);
+    ASSERT_EQ(5, a.data()[5]);
 }
-
-/**
- * Tests getting single values at index with negative values.
- */
-TEST(NDArray, GetIndexNegative) {
-    ndarray::NDArray<int, 2> a({2, 3});
-
-    a(1, 0) = 1;
-
-    ASSERT_EQ(1, a(-1, -3));
-}
-
-/**
- * Tests setting single values at invalid index.
- */
-// TEST(NDArray, SetIndexInvalid) {
-//     ndarray::NDArray<int, 2> a({2, 3});
-
-//     EXPECT_THROW(({ a(0, 5) = 1; }), std::invalid_argument);
-// }
-
-/**
- * Tests getting single values at invalid index.
- */
-// TEST(NDArray, GetIndexInvalid) {
-//     ndarray::NDArray<int, 2> a({2, 3});
-
-//     EXPECT_THROW(({ a(0, 5); }), std::invalid_argument);
-// }
 
 /**
  * Tests assignment.

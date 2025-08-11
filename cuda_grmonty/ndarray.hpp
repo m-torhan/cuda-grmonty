@@ -31,7 +31,7 @@ public:
     NDArray(const Index &shape, const std::vector<T> &values);
     NDArray(const NDArray<T, N> &other);
     template <unsigned int M, typename = std::enable_if_t<N != M>>
-    NDArray(const NDArray<T, N> &other) = delete;
+    NDArray(const NDArray<T, M> &other) = delete;
     NDArray(NDArray<T, N> &&other) = default;
     ~NDArray() {}
 
@@ -59,7 +59,7 @@ public:
     template <unsigned int K = N, typename = std::enable_if_t<K == 0>>
     operator T() const;
 
-    T *data() noexcept { return data_; }
+    T *data() noexcept { return data_.get(); }
 
     /**
      * @brief Returns number of dimensions.

@@ -10,8 +10,10 @@
 
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/hotcross.hpp"
-#include "cuda_grmonty/mathfn.hpp"
 #include "cuda_grmonty/ndarray.hpp"
+#ifdef CUDA
+#include "cuda_grmonty/hotcross.cuh"
+#endif /* CUDA */
 
 namespace hotcross {
 
@@ -34,6 +36,10 @@ static double boostcross(double w, double mu_e, double gamma_e);
 void init_table(ndarray::NDArray<double, 2> &table) {
     spdlog::info("Initializing HARM model hotcross");
 
+/* TODO: Add some better switching between implementations */
+#ifdef CUDA
+    cuda_hotcross::init_table(table);
+#else  /* CUDA */
     static const double l_min_w = std::log10(consts::hotcross::min_w);
     static const double l_min_t = std::log10(consts::hotcross::min_t);
     static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
@@ -48,6 +54,7 @@ void init_table(ndarray::NDArray<double, 2> &table) {
             table(i, j) = std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
         }
     }
+#endif /* CUDA */
 
     spdlog::info("Initializing HARM model hotcross done");
 }
@@ -84,7 +91,7 @@ double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray
     return std::pow(10, l_cross);
 }
 
-double total_compton_cross_num(double w, double theta_e) {
+static double total_compton_cross_num(double w, double theta_e) {
     if (std::isnan(w)) {
         spdlog::error("Compton cross is nan: %f %f", w, theta_e);
         return 0.0;
@@ -134,7 +141,7 @@ static double dnd_gamma_e(double theta_e, double gamma_e) {
     double k2f;
 
     if (theta_e > 1.0e-2) {
-        k2f = mathfn::bessel_k_n(2, 1.0 / theta_e) * std::exp(1.0 / theta_e);
+        k2f = std::cyl_bessel_k(2, 1.0 / theta_e) * std::exp(1.0 / theta_e);
     } else {
         k2f = std::sqrt(std::numbers::pi * theta_e / 2.0);
     }
