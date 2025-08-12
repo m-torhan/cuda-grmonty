@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <array>
-#include <initializer_list>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -27,7 +26,7 @@ class NDArray {
 public:
     using Index = std::array<int, N>;
 
-    NDArray() : data_(nullptr), shape_({}), index_({}) {}
+    NDArray() : data_(nullptr) {}
     explicit NDArray(const Index &shape);
     NDArray(const Index &shape, const std::vector<T> &values);
     NDArray(const NDArray<T, N> &other);
@@ -43,10 +42,10 @@ public:
     T operator=(T other);
 
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) < N>>
-    NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices);
+    NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices) noexcept;
 
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) < N>>
-    const NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices) const;
+    const NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices) const noexcept;
 
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) == N>>
     T operator()(Indices... indices) const noexcept;
@@ -60,25 +59,22 @@ public:
     template <unsigned int K = N, typename = std::enable_if_t<K == 0>>
     operator T() const;
 
+    T *data() noexcept { return data_; }
+
     /**
      * @brief Returns number of dimensions.
      */
-    unsigned int ndim() const;
+    unsigned int ndim() const noexcept { return N; }
 
     /**
      * @brief Returns number of elements.
      */
-    unsigned int size() const;
+    unsigned int size() const noexcept;
 
     /**
      * @brief Returns shape of the array.
      */
-    std::array<int, N> shape() const;
-
-    /**
-     * @brief Converts 0-dim array to value.
-     */
-    T value() const;
+    std::array<int, N> shape() const noexcept { return shape_; }
 
     /**
      * @brief Reads values from input stream.
@@ -89,20 +85,17 @@ public:
     /**
      * @brief 2D array determinant.
      */
+    template <unsigned int K = N, typename = std::enable_if_t<K == 2>>
     T det() const;
 
 private:
     void compute_strides();
-    unsigned int flat_index(int index) const noexcept;
     unsigned int flat_index(const std::array<int, N> &index) const noexcept;
-    unsigned int flat_index_general(const std::array<int, N> &index) const noexcept;
-    unsigned int flat_index_contiguous(const std::array<int, N> &index) const noexcept;
 
     std::shared_ptr<T[]> data_;
-    std::vector<int> shape_;
-    std::vector<int> index_;
-    std::vector<int> strides_;
-    bool is_contiguous_;
+    int data_offset_;
+    std::array<int, N> shape_;
+    std::array<int, N> strides_;
 
     /* Make all NDArray<T, M> friends (M can be any dimension) */
     template <typename, unsigned int>
@@ -110,47 +103,36 @@ private:
 };
 
 template <typename T, unsigned int N>
-NDArray<T, N>::NDArray(const std::array<int, N> &shape) : shape_(shape.begin(), shape.end()) {
+NDArray<T, N>::NDArray(const std::array<int, N> &shape) : shape_(shape) {
     unsigned int size = 1;
     for (const auto &s : shape) {
         size *= s;
     }
     data_ = std::shared_ptr<T[]>(new T[size]);
-    index_.resize(shape.size(), -1);
-    is_contiguous_ = true;
+    data_offset_ = 0;
     compute_strides();
 }
 
 template <typename T, unsigned int N>
-NDArray<T, N>::NDArray(const std::array<int, N> &shape, const std::vector<T> &values)
-    : shape_(shape.begin(), shape.end()) {
+NDArray<T, N>::NDArray(const std::array<int, N> &shape, const std::vector<T> &values) : shape_(shape) {
     unsigned int size = 1;
     for (const auto &s : shape) {
         size *= s;
     }
     data_ = std::shared_ptr<T[]>(new T[size]);
-    index_.resize(shape.size(), -1);
+    data_offset_ = 0;
     if (size != values.size()) {
         throw std::invalid_argument("Invalid number of values");
     }
     for (int i = 0; i < static_cast<int>(size); ++i) {
-        data_[i] = values[i];
+        data_[data_offset_ + i] = values[i];
     }
-    is_contiguous_ = true;
     compute_strides();
 }
 
 template <typename T, unsigned int N>
-NDArray<T, N>::NDArray(const NDArray<T, N> &other) : shape_(other.shape()) {
-    data_ = std::shared_ptr<T[]>(new T[other.size()]);
-
-    for (int i = 0; i < static_cast<int>(other.size()); ++i) {
-        data_[i] = other.data_[other.flat_index(i)];
-    }
-    index_.resize(other.ndim(), -1);
-    is_contiguous_ = true;
-    compute_strides();
-}
+NDArray<T, N>::NDArray(const NDArray<T, N> &other)
+    : data_(other.data_), data_offset_(other.data_offset_), shape_(other.shape()), strides_(other.strides_) {}
 
 template <typename T, unsigned int N>
 NDArray<T, N> &NDArray<T, N>::operator=(const NDArray<T, N> &other) {
@@ -162,22 +144,18 @@ NDArray<T, N> &NDArray<T, N>::operator=(const NDArray<T, N> &other) {
     std::array<int, N> other_shape = other.shape();
 
     if (data_ == nullptr) {
-        data_ = std::shared_ptr<T[]>(new T[other.size()]);
-        shape_.resize(other_shape.size());
-        std::copy(std::begin(other_shape), std::end(other_shape), std::begin(shape_));
-        index_.resize(shape_.size(), -1);
-        is_contiguous_ = true;
-        compute_strides();
+        data_ = other.data_;
+        data_offset_ = other.data_offset_;
+        shape_ = other.shape_;
+        strides_ = other.strides_;
     } else {
         if (!std::equal(this_shape.begin(), this_shape.end(), other_shape.begin())) {
             throw std::invalid_argument("Provided ndarrays have different shapes");
         }
-        is_contiguous_ = other.is_contiguous_;
+        for (int i = 0; i < static_cast<int>(size()); ++i) {
+            data_[data_offset_ + i] = other.data_[other.data_offset_ + i];
+        }
     }
-    for (int i = 0; i < static_cast<int>(size()); ++i) {
-        data_[flat_index(i)] = other.data_[other.flat_index(i)];
-    }
-    compute_strides();
 
     return *this;
 }
@@ -185,33 +163,27 @@ NDArray<T, N> &NDArray<T, N>::operator=(const NDArray<T, N> &other) {
 template <typename T, unsigned int N>
 T NDArray<T, N>::operator=(T other) {
     for (int i = 0; i < static_cast<int>(size()); ++i) {
-        data_[flat_index(i)] = other;
+        data_[data_offset_ + i] = other;
     }
     return other;
 }
 
 template <typename T, unsigned int N>
 template <typename... Indices, typename>
-const NDArray<T, N - sizeof...(Indices)> NDArray<T, N>::operator()(Indices... indices) const {
+const NDArray<T, N - sizeof...(Indices)> NDArray<T, N>::operator()(Indices... indices) const noexcept {
     std::array<int, sizeof...(Indices)> index = {static_cast<int>(indices)...};
     NDArray<T, N - sizeof...(Indices)> ret;
 
     ret.data_ = data_;
-    ret.shape_ = shape_;
-    ret.index_.clear();
-    for (size_t i = 0, j = 0; i < shape_.size(); ++i) {
-        if (index_[i] == -1 && j < sizeof...(Indices)) {
-            int idx = index[j] >= 0 ? index[j] : shape_[i] + index[j];
-            if (idx > static_cast<int>(shape_[i]) || idx < 0) {
-                throw std::invalid_argument("Invalid index");
-            }
-            ret.index_.push_back(idx);
-            ++j;
-        } else {
-            ret.index_.push_back(index_[i]);
-        }
+    ret.data_offset_ = data_offset_;
+
+    for (int i = 0; i < static_cast<int>(index.size()); ++i) {
+        ret.data_offset_ += strides_[i] * index[i];
     }
-    ret.is_contiguous_ = false;
+    for (size_t i = 0; i < N - index.size(); ++i) {
+        ret.shape_[i] = shape_[index.size() + i];
+    }
+
     ret.compute_strides();
 
     return ret;
@@ -219,26 +191,20 @@ const NDArray<T, N - sizeof...(Indices)> NDArray<T, N>::operator()(Indices... in
 
 template <typename T, unsigned int N>
 template <typename... Indices, typename>
-NDArray<T, N - sizeof...(Indices)> NDArray<T, N>::operator()(Indices... indices) {
+NDArray<T, N - sizeof...(Indices)> NDArray<T, N>::operator()(Indices... indices) noexcept {
     std::array<int, sizeof...(Indices)> index = {static_cast<int>(indices)...};
     NDArray<T, N - sizeof...(Indices)> ret;
 
     ret.data_ = data_;
-    ret.shape_ = shape_;
-    ret.index_.clear();
-    for (size_t i = 0, j = 0; i < shape_.size(); ++i) {
-        if (index_[i] == -1 && j < sizeof...(Indices)) {
-            int idx = index[j] >= 0 ? index[j] : shape_[i] + index[j];
-            if (idx > static_cast<int>(shape_[i]) || idx < 0) {
-                throw std::invalid_argument("Invalid index");
-            }
-            ret.index_.push_back(idx);
-            ++j;
-        } else {
-            ret.index_.push_back(index_[i]);
-        }
+    ret.data_offset_ = data_offset_;
+
+    for (int i = 0; i < static_cast<int>(index.size()); ++i) {
+        ret.data_offset_ += strides_[i] * index[i];
     }
-    ret.is_contiguous_ = false;
+    for (int i = 0; i < static_cast<int>(N - index.size()); ++i) {
+        ret.shape_[i] = shape_[index.size() + i];
+    }
+
     ret.compute_strides();
 
     return ret;
@@ -249,7 +215,7 @@ template <typename... Indices, typename>
 T NDArray<T, N>::operator()(Indices... indices) const noexcept {
     std::array<int, sizeof...(Indices)> index = {static_cast<int>(indices)...};
 
-    return data_[flat_index(index)];
+    return data_[data_offset_ + flat_index(index)];
 }
 
 template <typename T, unsigned int N>
@@ -257,7 +223,7 @@ template <typename... Indices, typename>
 T &NDArray<T, N>::operator()(Indices... indices) noexcept {
     std::array<int, sizeof...(Indices)> index = {static_cast<int>(indices)...};
 
-    return data_[flat_index(index)];
+    return data_[data_offset_ + flat_index(index)];
 }
 
 template <typename T, unsigned int N>
@@ -266,40 +232,16 @@ NDArray<T, N>::operator T() const {
     if (0 != ndim()) {
         throw std::invalid_argument("Cannot convert ndarray with ndim larger than 0");
     }
-    return data_[flat_index({})];
+    return data_[data_offset_ + flat_index({})];
 }
 
 template <typename T, unsigned int N>
-unsigned int NDArray<T, N>::ndim() const {
-    return N;
-}
-
-template <typename T, unsigned int N>
-unsigned int NDArray<T, N>::size() const {
+unsigned int NDArray<T, N>::size() const noexcept {
     unsigned int size = 1;
-    for (int i = 0; i < static_cast<int>(shape_.size()); ++i) {
-        if (index_[i] == -1) {
-            size *= shape_[i];
-        }
+    for (int i = 0; i < static_cast<int>(N); ++i) {
+        size *= shape_[i];
     }
     return size;
-}
-
-template <typename T, unsigned int N>
-std::array<int, N> NDArray<T, N>::shape() const {
-    std::array<int, N> shape{};
-    for (int i = 0, j = 0; i < static_cast<int>(shape_.size()); ++i) {
-        if (index_[i] == -1) {
-            shape[j] = shape_[i];
-            ++j;
-        }
-    }
-    return shape;
-}
-
-template <typename T, unsigned int N>
-T NDArray<T, N>::value() const {
-    return static_cast<T>(*this);
 }
 
 template <typename T, unsigned int N>
@@ -307,12 +249,13 @@ std::istream &operator>>(std::istream &is, const NDArray<T, N> &array) {
     for (int i = 0; i < static_cast<int>(array.size()); ++i) {
         T value;
         is >> value;
-        array.data_[array.flat_index(i)] = value;
+        array.data_[array.data_offset_ + i] = value;
     }
     return is;
 }
 
 template <typename T, unsigned int N>
+template <unsigned int, typename>
 T NDArray<T, N>::det() const {
     if (ndim() != 2) {
         throw std::invalid_argument("Array should be 2-dimensional");
@@ -325,7 +268,7 @@ T NDArray<T, N>::det() const {
     T *data = new T[n * n];
 
     for (int i = 0; i < static_cast<int>(size()); ++i) {
-        data[i] = data_[flat_index(i)];
+        data[i] = data_[data_offset_ + i];
     }
 
     T ret = linalg::matrix::det(n, data);
@@ -337,72 +280,18 @@ T NDArray<T, N>::det() const {
 
 template <typename T, unsigned int N>
 void NDArray<T, N>::compute_strides() {
-    strides_.resize(shape_.size());
     unsigned int stride = 1;
-    for (int i = static_cast<int>(shape_.size()) - 1; i >= 0; --i) {
+    for (int i = N - 1; i >= 0; --i) {
         strides_[i] = stride;
         stride *= shape_[i];
     }
 }
 
 template <typename T, unsigned int N>
-unsigned int NDArray<T, N>::flat_index(int index) const noexcept {
-    int s = size();
-    if (index < 0) {
-        index += s;
-    }
-    if (is_contiguous_) {
-        return index;
-    }
-
-    std::array<int, N> array_shape = shape();
-    std::array<int, N> non_flat_index;
-
-    for (int i = N - 1; i >= 0; --i) {
-        non_flat_index[i] = index % array_shape[i];
-        index /= array_shape[i];
-    }
-
-    return flat_index(non_flat_index);
-}
-
-template <typename T, unsigned int N>
 unsigned int NDArray<T, N>::flat_index(const std::array<int, N> &index) const noexcept {
-    std::array<int, N> s = shape();
-    std::array<int, N> final_index;
+    unsigned int flat_index = 0;
     for (int i = 0; i < static_cast<int>(N); ++i) {
-        final_index[i] = index[i] >= 0 ? index[i] : index[i] + s[i];
-    }
-    return is_contiguous_ ? flat_index_contiguous(index) : flat_index_general(index);
-}
-
-template <typename T, unsigned int N>
-unsigned int NDArray<T, N>::flat_index_general(const std::array<int, N> &index) const noexcept {
-    unsigned int flat_index = 0;
-    size_t j = 0;
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        unsigned int idx;
-        if (index_[i] == -1) {
-            int raw = index[j++];
-            if (raw < 0) {
-                raw += shape_[i];
-            }
-            idx = static_cast<unsigned int>(raw);
-        } else {
-            idx = static_cast<unsigned int>(index_[i]);
-        }
-        flat_index += idx * strides_[i];
-    }
-    return flat_index;
-}
-
-template <typename T, unsigned int N>
-unsigned int NDArray<T, N>::flat_index_contiguous(const std::array<int, N> &index) const noexcept {
-    unsigned int flat_index = 0;
-    for (size_t i = 0; i < shape_.size(); ++i) {
         int idx = index[i];
-        if (idx < 0)
-            idx += shape_[i];
         flat_index += static_cast<unsigned int>(idx) * strides_[i];
     }
     return flat_index;
