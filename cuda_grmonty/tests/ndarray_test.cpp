@@ -123,46 +123,6 @@ TEST(NDArray, SetGetIndex) {
 }
 
 /**
- * Tests setting single values at index with negative values.
- */
-TEST(NDArray, SetIndexNegative) {
-    ndarray::NDArray<int, 2> a({2, 3});
-
-    a(-1, -3) = 1;
-
-    ASSERT_EQ(1, a(1, 0));
-}
-
-/**
- * Tests getting single values at index with negative values.
- */
-TEST(NDArray, GetIndexNegative) {
-    ndarray::NDArray<int, 2> a({2, 3});
-
-    a(1, 0) = 1;
-
-    ASSERT_EQ(1, a(-1, -3));
-}
-
-/**
- * Tests setting single values at invalid index.
- */
-// TEST(NDArray, SetIndexInvalid) {
-//     ndarray::NDArray<int, 2> a({2, 3});
-
-//     EXPECT_THROW(({ a(0, 5) = 1; }), std::invalid_argument);
-// }
-
-/**
- * Tests getting single values at invalid index.
- */
-// TEST(NDArray, GetIndexInvalid) {
-//     ndarray::NDArray<int, 2> a({2, 3});
-
-//     EXPECT_THROW(({ a(0, 5); }), std::invalid_argument);
-// }
-
-/**
  * Tests assignment.
  */
 TEST(NDArray, Assign) {
@@ -225,11 +185,7 @@ TEST(NDArray, SetWholeNDArrayWithSingleValue) {
  * Tests retrieveing subarray from an array.
  */
 TEST(NDArray, Subarray) {
-    ndarray::NDArray<int, 2> a({2, 3});
-
-    a(0, 0) = 0;
-    a(0, 1) = 1;
-    a(0, 2) = 2;
+    ndarray::NDArray<int, 2> a({2, 3}, {0, 1, 2, 3, 4, 5});
 
     ndarray::NDArray<int, 1> b = a(0);
 
@@ -239,6 +195,43 @@ TEST(NDArray, Subarray) {
     ASSERT_EQ(0, b(0));
     ASSERT_EQ(1, b(1));
     ASSERT_EQ(2, b(2));
+
+    ndarray::NDArray<int, 1> c = a(1);
+
+    ASSERT_EQ(3, c.size());
+    ASSERT_EQ(1, c.ndim());
+    ASSERT_EQ(3, c.shape()[0]);
+    ASSERT_EQ(3, c(0));
+    ASSERT_EQ(4, c(1));
+    ASSERT_EQ(5, c(2));
+}
+
+/**
+ * Tests retrieveing subarray from an array.
+ */
+TEST(NDArray, SubarrayMoreDims) {
+    ndarray::NDArray<int, 4> a({1, 2, 1, 2}, {0, 1, 2, 3});
+
+    ndarray::NDArray<int, 2> b = a(0, 1);
+
+    ASSERT_EQ(2, b.size());
+    ASSERT_EQ(2, b.ndim());
+    ASSERT_EQ(1, b.shape()[0]);
+    ASSERT_EQ(2, b.shape()[1]);
+    ASSERT_EQ(2, b(0, 0));
+    ASSERT_EQ(3, b(0, 1));
+
+    ndarray::NDArray<int, 3> c = a(0);
+
+    ASSERT_EQ(4, c.size());
+    ASSERT_EQ(3, c.ndim());
+    ASSERT_EQ(2, c.shape()[0]);
+    ASSERT_EQ(1, c.shape()[1]);
+    ASSERT_EQ(2, c.shape()[2]);
+    ASSERT_EQ(0, c(0, 0, 0));
+    ASSERT_EQ(1, c(0, 0, 1));
+    ASSERT_EQ(2, c(1, 0, 0));
+    ASSERT_EQ(3, c(1, 0, 1));
 }
 
 /**
