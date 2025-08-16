@@ -26,20 +26,15 @@ static double linear_interp_f(double k, const std::array<double, consts::n_e_sam
 void init_emiss_tables(std::array<double, consts::n_e_samp + 1> &f, std::array<double, consts::n_e_samp + 1> &k2) {
     spdlog::info("Initializing HARM model emission tables");
 
-    static const double l_min_k = std::log(consts::jnu::min_k);
-    static const double l_min_t = std::log(consts::jnu::min_t);
-    static const double d_l_k = std::log(consts::jnu::max_k / consts::jnu::min_k) / consts::n_e_samp;
-    static const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
-
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
-        double k = std::exp(i * d_l_k + l_min_k);
+        double k = std::exp(i * consts::jnu::d_l_k + consts::jnu::l_min_k);
         f[i] = jnu_mixed::emiss_table_f(k);
     }
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         spdlog::debug("{} / {}", i, consts::n_e_samp);
-        double t = std::exp(i * d_l_t + l_min_t);
+        double t = std::exp(i * consts::jnu::d_l_t + consts::jnu::l_min_t);
         k2[i] = std::log(std::cyl_bessel_k(2, 1.0 / t));
     }
 
@@ -122,11 +117,8 @@ static double emiss_table_f(double k) {
 }
 
 static double linear_interp_k2(double theta_e, const std::array<double, consts::n_e_samp + 1> &k2_table) {
-    static const double l_min_t = std::log(consts::jnu::min_t);
-    static const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
-
     double l_t = std::log(theta_e);
-    double d_i = (l_t - l_min_t) / d_l_t;
+    double d_i = (l_t - consts::jnu::l_min_t) / consts::jnu::d_l_t;
     int i = static_cast<int>(d_i);
 
     d_i -= i;
@@ -135,11 +127,8 @@ static double linear_interp_k2(double theta_e, const std::array<double, consts::
 }
 
 static double linear_interp_f(double k, const std::array<double, consts::n_e_samp + 1> &f_table) {
-    static const double l_min_k = std::log(consts::jnu::min_k);
-    static const double d_l_k = std::log(consts::jnu::max_k / consts::jnu::min_k) / consts::n_e_samp;
-
     double l_k = std::log(k);
-    double d_i = (l_k - l_min_k) / d_l_k;
+    double d_i = (l_k - consts::jnu::l_min_k) / consts::jnu::d_l_k;
     int i = static_cast<int>(d_i);
 
     d_i -= i;

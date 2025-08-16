@@ -24,6 +24,11 @@ constexpr int n_th_bins = 6;
 constexpr double nu_min = 1.0e9;
 constexpr double nu_max = 1.0e16;
 
+const double l_nu_min = std::log(consts::nu_min);
+const double l_nu_max = std::log(consts::nu_max);
+const double n_l_n = l_nu_max - l_nu_min;
+const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
+
 constexpr double theta_e_min = 0.3;
 constexpr double theta_e_max = 1000.0;
 constexpr double tp_over_te = 3.0;
@@ -32,6 +37,9 @@ constexpr double weight_min = 1.0e31;
 
 constexpr double r_max = 100.0;
 constexpr double roulette = 1.0e4;
+const double x1_max = std::log(consts::r_max);
+
+constexpr double step_eps = 0.04;
 
 constexpr double etol = 1.0e-3;
 constexpr int max_iter = 2;
@@ -66,6 +74,9 @@ constexpr int nint = 20000;
 constexpr double bthsq_min = 1.0e-4;
 constexpr double bthsq_max = 1.0e8;
 
+const double l_b_min = std::log(consts::bthsq_min);
+const double d_l_b = std::log(consts::bthsq_max / consts::bthsq_min) / consts::nint;
+
 namespace hotcross {
 
 constexpr double min_w = 1.0e-12;
@@ -79,6 +90,11 @@ constexpr double max_gamma = 12.0;
 constexpr double d_mu_e = 0.05;
 constexpr double d_gamma_e = 0.05;
 
+const double l_min_w = std::log10(consts::hotcross::min_w);
+const double l_min_t = std::log10(consts::hotcross::min_t);
+const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
+const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
+
 }; /* namespace hotcross */
 
 namespace jnu {
@@ -88,8 +104,13 @@ constexpr double eps_rel = 1.0e-6;
 
 constexpr double min_k = 0.002;
 constexpr double max_k = 1.0e7;
+const double l_min_k = std::log(consts::jnu::min_k);
+const double d_l_k = std::log(consts::jnu::max_k / consts::jnu::min_k) / consts::n_e_samp;
+
 constexpr double min_t = theta_e_min;
 constexpr double max_t = 1.0e2;
+const double l_min_t = std::log(consts::jnu::min_t);
+const double d_l_t = std::log(consts::jnu::max_t / consts::jnu::min_t) / consts::n_e_samp;
 
 constexpr double cst = 1.88774862536; /* 2^{11/12} */
 
