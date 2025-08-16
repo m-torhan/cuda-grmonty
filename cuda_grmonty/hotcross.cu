@@ -32,11 +32,6 @@ static __global__ void
 init_table_entry(double *table, int n, int m, double l_min_w, double d_l_w, double l_t, double d_l_t);
 
 void init_table(ndarray::NDArray<double, 2> &table) {
-    static const double l_min_w = std::log10(consts::hotcross::min_w);
-    static const double l_min_t = std::log10(consts::hotcross::min_t);
-    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
-    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
-
     double *dev_table;
 
     cudaError_t code = cudaMalloc((void **)&dev_table, table.size() * sizeof(double));
@@ -50,8 +45,13 @@ void init_table(ndarray::NDArray<double, 2> &table) {
         return;
     }
 
-    init_table_entry<<<dim3(16, 16), dim3(16, 16)>>>(
-        dev_table, table.shape()[0], table.shape()[1], l_min_w, d_l_w, l_min_t, d_l_t);
+    init_table_entry<<<dim3(16, 16), dim3(16, 16)>>>(dev_table,
+                                                     table.shape()[0],
+                                                     table.shape()[1],
+                                                     consts::hotcross::l_min_w,
+                                                     consts::hotcross::d_l_w,
+                                                     consts::hotcross::l_min_t,
+                                                     consts::hotcross::d_l_t);
 
     code = cudaDeviceSynchronize();
     if (code != cudaSuccess) {

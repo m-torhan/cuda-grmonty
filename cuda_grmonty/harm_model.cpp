@@ -40,6 +40,7 @@ HARMModel::HARMModel(int photon_n, double mass_unit) : photon_n_(photon_n), mass
     b_unit_ = consts::cl * std::sqrt(4.0 * std::numbers::pi * rho_unit_);
     n_e_unit_ = rho_unit_ / (consts::mp + consts::me);
     max_tau_scatt_ = 6.0 * l_unit_ * rho_unit_ * 0.4;
+    d_tau_k_ = 2.0 * std::numbers::pi * l_unit_ / (consts::me * consts::cl * consts::cl / consts::hbar);
     for (auto &row : spectrum_) {
         for (auto &cell : row) {
             cell = {};
@@ -195,6 +196,7 @@ void HARMModel::read_file(std::string filepath) {
     spdlog::debug("l_adv={}", l_adv);
 
     rh_ = 1.0 + std::sqrt(1.0 - header_.a * header_.a);
+    x1_min_ = std::log(rh_);
 
     spdlog::info("Reading file done");
 }
@@ -236,16 +238,12 @@ void HARMModel::init_geometry() {
 void HARMModel::init_weight_table() {
     spdlog::info("Initializing super photon weight table");
 
-    static const double l_nu_min = std::log(consts::nu_min);
-    static const double l_nu_max = std::log(consts::nu_max);
-    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
-
     double sum[consts::n_e_samp + 1];
     double nu[consts::n_e_samp + 1];
 
     for (int i = 0; i <= consts::n_e_samp; ++i) {
         sum[i] = 0.0;
-        nu[i] = std::exp(i * d_l_nu + l_nu_min);
+        nu[i] = std::exp(i * consts::d_l_nu + consts::l_nu_min);
     }
 
     double s_fac = header_.dx[1] * header_.dx[2] * header_.dx[3] * l_unit_ * l_unit_ * l_unit_;
@@ -280,13 +278,6 @@ void HARMModel::init_weight_table() {
 void HARMModel::init_nint_table() {
     spdlog::info("Initializing nint table");
 
-    static const double l_b_min = std::log(consts::bthsq_min);
-    static const double d_l_b = std::log(consts::bthsq_max / consts::bthsq_min) / consts::nint;
-
-    static const double l_nu_min = std::log(consts::nu_min);
-    static const double l_nu_max = std::log(consts::nu_max);
-    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
-
     for (int i = 0; i <= consts::nint; ++i) {
         if (i % 1024 == 0) {
             spdlog::debug("{} / {}", i, consts::nint);
@@ -294,16 +285,16 @@ void HARMModel::init_nint_table() {
 
         double nint = 0.0;
         double dndlnu_max = 0.0;
-        double b_mag = std::exp(i * d_l_b + l_b_min);
+        double b_mag = std::exp(i * consts::d_l_b + consts::l_b_min);
 
         for (int j = 0; j < consts::n_e_samp; ++j) {
-            double dn =
-                jnu_mixed::f_eval(1.0, b_mag, std::exp(j * d_l_nu + l_nu_min), f_) / (std::exp(weight_[j]) + 1.0e-100);
+            double dn = jnu_mixed::f_eval(1.0, b_mag, std::exp(j * consts::d_l_nu + consts::l_nu_min), f_) /
+                        (std::exp(weight_[j]) + 1.0e-100);
 
             if (dn > dndlnu_max) {
                 dndlnu_max = dn;
             }
-            nint += d_l_nu * dn;
+            nint += consts::d_l_nu * dn;
         }
         nint *= header_.dx[1] * header_.dx[2] * header_.dx[3] * l_unit_ * l_unit_ * l_unit_ * std::numbers::sqrt2 *
                 consts::ee * consts::ee * consts::ee / (27.0 * consts::me * consts::cl * consts::cl) *
@@ -550,10 +541,6 @@ struct Zone HARMModel::get_zone() {
 }
 
 struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
-    static const double l_nu_min = std::log(consts::nu_min);
-    static const double l_nu_max = std::log(consts::nu_max);
-    static const double n_l_n = l_nu_max - l_nu_min;
-
     static double e_con[consts::n_dim][consts::n_dim];
     static double e_cov[consts::n_dim][consts::n_dim];
 
@@ -567,7 +554,7 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
     double weight;
 
     do {
-        nu = std::exp(monty_rand::rand() * n_l_n + l_nu_min);
+        nu = std::exp(monty_rand::rand() * consts::n_l_n + consts::l_nu_min);
         weight = linear_interp_weight(nu);
     } while (monty_rand::rand() >
              (jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu, f_) / (weight + 1.0e-100)) / zone.dn_max);
@@ -637,13 +624,9 @@ struct Photon HARMModel::sample_zone_photon(struct Zone &zone) {
 }
 
 double HARMModel::linear_interp_weight(double nu) {
-    static const double l_nu_min = std::log(consts::nu_min);
-    static const double l_nu_max = std::log(consts::nu_max);
-    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
-
     double l_nu = std::log(nu);
 
-    double d_i = (l_nu - l_nu_min) / d_l_nu;
+    double d_i = (l_nu - consts::l_nu_min) / consts::d_l_nu;
     int i = static_cast<int>(d_i);
     d_i -= i;
 
@@ -676,9 +659,6 @@ void HARMModel::track_super_photon(struct Photon &photon) {
         spdlog::error("Invalid photon provided");
         return;
     }
-
-    static const double d_tau_k =
-        2.0 * std::numbers::pi * l_unit_ / (consts::me * consts::cl * consts::cl / consts::hbar);
 
     ndarray::NDArray<double, 2> g_cov({consts::n_dim, consts::n_dim});
 
@@ -741,8 +721,8 @@ void HARMModel::track_super_photon(struct Photon &photon) {
             double bias;
 
             if (bound_flag || nu < 0.0) {
-                d_tau_scatt = 0.5 * alpha_scatti * d_tau_k * dl;
-                d_tau_abs = 0.5 * alpha_absi * d_tau_k * dl;
+                d_tau_scatt = 0.5 * alpha_scatti * d_tau_k_ * dl;
+                d_tau_abs = 0.5 * alpha_absi * d_tau_k_ * dl;
                 alpha_scatti = 0.0;
                 alpha_absi = 0.0;
                 bias = 0.0;
@@ -750,12 +730,12 @@ void HARMModel::track_super_photon(struct Photon &photon) {
             } else {
                 double alpha_scattf =
                     radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
-                d_tau_scatt = 0.5 * (alpha_scatti + alpha_scattf) * d_tau_k * dl;
+                d_tau_scatt = 0.5 * (alpha_scatti + alpha_scattf) * d_tau_k_ * dl;
                 alpha_scatti = alpha_scattf;
 
                 double alpha_absf =
                     radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
-                d_tau_abs = 0.5 * (alpha_absi + alpha_absf) * d_tau_k * dl;
+                d_tau_abs = 0.5 * (alpha_absi + alpha_absf) * d_tau_k_ * dl;
                 alpha_absi = alpha_absf;
 
                 double bf = bias_func(fluid_params.theta_e, photon.w);
@@ -1123,13 +1103,6 @@ void HARMModel::record_super_photon(const struct Photon &photon) {
 }
 
 std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
-    static const double l_b_min = std::log(consts::bthsq_min);
-    static const double d_l_b = std::log(consts::bthsq_max / consts::bthsq_min) / consts::nint;
-
-    static const double l_nu_min = std::log(consts::nu_min);
-    static const double l_nu_max = std::log(consts::nu_max);
-    static const double d_l_nu = (l_nu_max - l_nu_min) / consts::n_e_samp;
-
     auto fluid_zone = get_fluid_zone(x_1, x_2);
 
     if (fluid_zone.n_e == 0.0 || fluid_zone.theta_e < consts::theta_e_min) {
@@ -1138,7 +1111,7 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
 
     double l_bth = std::log(fluid_zone.b * fluid_zone.theta_e * fluid_zone.theta_e);
 
-    double d_l = (l_bth - l_b_min) / (d_l_b);
+    double d_l = (l_bth - consts::l_b_min) / (consts::d_l_b);
 
     int l = static_cast<int>(d_l);
     d_l -= l;
@@ -1153,13 +1126,14 @@ std::tuple<double, double> HARMModel::init_zone(int x_1, int x_2) const {
     if (l >= consts::nint) {
         spdlog::warn("outside of nint table range: {}", fluid_zone.b * fluid_zone.theta_e * fluid_zone.theta_e);
         for (int i = 0; i <= consts::n_e_samp; ++i) {
-            double dn = jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, std::exp(x_2 * d_l_nu + l_nu_min), f_) /
+            double dn = jnu_mixed::f_eval(
+                            fluid_zone.theta_e, fluid_zone.b, std::exp(x_2 * consts::d_l_nu + consts::l_nu_min), f_) /
                         (std::exp(weight_[i]) + 1.0e-100);
             if (dn > dn_max) {
                 dn_max = dn;
             }
 
-            ninterp += d_l_nu * dn;
+            ninterp += consts::d_l_nu * dn;
         }
     } else if (!std::isinf(nint_[l]) && !std::isinf(nint_[l + 1])) {
         ninterp = std::exp((1.0 - d_l) * nint_[l] + d_l * nint_[l + 1]);
@@ -1381,16 +1355,12 @@ void HARMModel::init_dkdlam(const double (&x)[consts::n_dim],
 }
 
 bool HARMModel::stop_criterion(struct Photon &photon) const {
-    static const double rh = 1.0 + std::sqrt(1.0 - header_.a * header_.a);
-    static const double x1_min = std::log(rh);
-    static const double x1_max = std::log(consts::r_max);
-
-    if (photon.x[1] < x1_min) {
+    if (photon.x[1] < x1_min_) {
         /* stop at event horizon */
         return true;
     }
 
-    if (photon.x[1] > x1_max) {
+    if (photon.x[1] > consts::x1_max) {
         /* stop at large distance */
         if (photon.w < consts::weight_min) {
             if (monty_rand::rand() <= 1.0 / consts::roulette) {
@@ -1413,18 +1383,12 @@ bool HARMModel::stop_criterion(struct Photon &photon) const {
     return false;
 }
 
-bool HARMModel::record_criterion(const struct Photon &photon) const {
-    static const double x1_max = std::log(consts::r_max);
-
-    return (photon.x[1] > x1_max);
-}
+bool HARMModel::record_criterion(const struct Photon &photon) const { return (photon.x[1] > consts::x1_max); }
 
 double HARMModel::step_size(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim]) {
-    static constexpr double eps = 0.04;
-
-    double dl_x_1 = eps * x[1] / (std::abs(k[1]) + consts::eps);
-    double dl_x_2 = eps * std::min(x[2], header_.x_stop[2] - x[2]) / (std::abs(k[2]) + consts::eps);
-    double dl_x_3 = eps / (std::abs(k[3] + consts::eps));
+    double dl_x_1 = consts::step_eps * x[1] / (std::abs(k[1]) + consts::eps);
+    double dl_x_2 = consts::step_eps * std::min(x[2], header_.x_stop[2] - x[2]) / (std::abs(k[2]) + consts::eps);
+    double dl_x_3 = consts::step_eps / (std::abs(k[3] + consts::eps));
 
     double i_dl_x_1 = 1.0 / (std::abs(dl_x_1) + consts::eps);
     double i_dl_x_2 = 1.0 / (std::abs(dl_x_2) + consts::eps);
