@@ -28,3 +28,41 @@ jobs:
     - name: Build
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" build //...
+
+  build-cuda:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Increase build space
+      run: |
+        echo "Before cleanup"
+        df -H
+        sudo rm -rf /usr/share/dotnet/*
+        sudo rm -rf /usr/local/lib/android/*
+        sudo rm -rf /opt/ghc/*
+        echo "After cleanup"
+        df -H
+
+    - uses: actions/checkout@v4
+
+    - name: Mount bazel cache
+      uses: actions/cache@v4
+      with:
+        path: "/home/runner/.cache/bazel"
+        key: bazel
+
+    - name: Install bazelisk
+      run: |
+        curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"
+        mkdir -p "${GITHUB_WORKSPACE}/bin/"
+        mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+        chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@master
+      id: cuda-toolkit
+      with:
+        cuda: '12.9.0'
+
+    - name: Build
+      run: |
+        "${GITHUB_WORKSPACE}/bin/bazel" build //... --config=cuda
