@@ -40,16 +40,11 @@ void init_table(ndarray::NDArray<double, 2> &table) {
 #ifdef CUDA
     cuda_hotcross::init_table(table);
 #else  /* CUDA */
-    static const double l_min_w = std::log10(consts::hotcross::min_w);
-    static const double l_min_t = std::log10(consts::hotcross::min_t);
-    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
-    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
-
     for (int i = 0; i <= consts::hotcross::n_w; ++i) {
         spdlog::debug("{} / {}", i, consts::hotcross::n_w);
         for (int j = 0; j <= consts::hotcross::n_t; ++j) {
-            double l_w = l_min_w + i * d_l_w;
-            double l_t = l_min_t + j * d_l_t;
+            double l_w = consts::hotcross::l_min_w + i * consts::hotcross::d_l_w;
+            double l_t = consts::hotcross::l_min_t + j * consts::hotcross::d_l_t;
 
             table(i, j) = std::log10(hotcross::total_compton_cross_num(std::pow(10.0, l_w), std::pow(10.0, l_t)));
         }
@@ -60,11 +55,6 @@ void init_table(ndarray::NDArray<double, 2> &table) {
 }
 
 double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table) {
-    static const double l_min_w = std::log10(consts::hotcross::min_w);
-    static const double l_min_t = std::log10(consts::hotcross::min_t);
-    static const double d_l_w = std::log10(consts::hotcross::max_w / consts::hotcross::min_w) / consts::hotcross::n_w;
-    static const double d_l_t = std::log10(consts::hotcross::max_t / consts::hotcross::min_t) / consts::hotcross::n_t;
-
     if (w * theta_e < 1.0e-6) {
         return consts::sigma_thomson;
     }
@@ -80,10 +70,10 @@ double total_compton_cross_lkup(double w, double theta_e, const ndarray::NDArray
 
     const double l_w = std::log10(w);
     const double l_t = std::log10(theta_e);
-    int i = static_cast<int>((l_w - l_min_w) / d_l_w);
-    int j = static_cast<int>((l_t - l_min_t) / d_l_t);
-    double d_i = (l_w - l_min_w) / d_l_w - i;
-    double d_j = (l_t - l_min_t) / d_l_t - j;
+    int i = static_cast<int>((l_w - consts::hotcross::l_min_w) / consts::hotcross::d_l_w);
+    int j = static_cast<int>((l_t - consts::hotcross::l_min_t) / consts::hotcross::d_l_t);
+    double d_i = (l_w - consts::hotcross::l_min_w) / consts::hotcross::d_l_w - i;
+    double d_j = (l_t - consts::hotcross::l_min_t) / consts::hotcross::d_l_t - j;
 
     double l_cross = (1.0 - d_i) * (1.0 - d_j) * hotcross_table(i, j) + d_i * (1.0 - d_j) * hotcross_table(i + 1, j) +
                      (1.0 - d_i) * d_j * hotcross_table(i, j + 1) + d_i * d_j * hotcross_table(i + 1, j + 1);
@@ -104,20 +94,19 @@ static double total_compton_cross_num(double w, double theta_e) {
         return hc_klein_nishina(w) * consts::sigma_thomson;
     }
 
-    const double d_mu_e = consts::hotcross::d_mu_e;
-    const double d_gamma_e = theta_e * consts::hotcross::d_gamma_e;
-
     /* integrate over mu_e, gamma_e, where mu_e is the cosine of the
        angle between k and u_e, and the angle k is assumed to lie,
        wlog, along the z axis */
     double cross = 0.0;
 
-    for (double mu_e = -1.0 + 0.5 * d_mu_e; mu_e < 1.0; mu_e += d_mu_e) {
-        for (double gamma_e = 1.0 + 0.5 * d_gamma_e; gamma_e < 1.0 + consts::hotcross::max_gamma * theta_e;
-             gamma_e += d_gamma_e) {
+    for (double mu_e = -1.0 + 0.5 * consts::hotcross::d_mu_e; mu_e < 1.0; mu_e += consts::hotcross::d_mu_e) {
+        for (double gamma_e = 1.0 + 0.5 * theta_e * consts::hotcross::d_gamma_e;
+             gamma_e < 1.0 + consts::hotcross::max_gamma * theta_e;
+             gamma_e += theta_e * consts::hotcross::d_gamma_e) {
             double f = 0.5 * dnd_gamma_e(theta_e, gamma_e);
 
-            cross += d_mu_e * d_gamma_e * boostcross(w, mu_e, gamma_e) * f;
+            cross +=
+                theta_e * consts::hotcross::d_mu_e * consts::hotcross::d_gamma_e * boostcross(w, mu_e, gamma_e) * f;
 
             if (std::isnan(cross)) {
                 spdlog::error("cross is nan");

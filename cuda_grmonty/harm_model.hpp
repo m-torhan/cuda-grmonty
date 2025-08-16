@@ -242,6 +242,8 @@ private:
     double theta_e_unit_;
     double n_e_unit_;
     double max_tau_scatt_;
+    double d_tau_k_;
+    double x1_min_;
 
     int zone_x_1_ = 0;
     int zone_x_2_ = -1;
