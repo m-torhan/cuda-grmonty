@@ -6,4 +6,4 @@ build --flag_alias=cuda_copts=@rules_cuda//cuda:copts
 build --flag_alias=cuda_runtime=@rules_cuda//cuda:runtime
 
 build --cxxopt=-std=c++20 --cxxopt=-O3
-build:cuda --define=CUDA=true  --cuda_copts=-std=c++20 --cxxopt=-DCUDA=1
+build:cuda --define=CUDA=true --cuda_copts=-std=c++20 --cxxopt=-DCUDA=1 --cuda_copts=-arch=sm_86
