@@ -9,7 +9,6 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "cuda_grmonty/ndarray.hpp"
 #include "spdlog/spdlog.h"
 
 #include "cuda_grmonty/harm_model.hpp"
@@ -47,43 +46,10 @@ int main(int argc, char *argv[]) {
     harm_model.init();
 
     monty_rand::init(123);
-    // monty_rand::init(std::chrono::system_clock::now().time_since_epoch().count());
 
-    auto start = std::chrono::system_clock::now();
-    auto start_0 = start;
-    int n_super_photon_created = 0;
-    int n_rate = 0;
+    harm_model.run_simulation();
 
-    spdlog::info("Starting main loop");
-
-    while (true) {
-        auto [photon, quit] = harm_model.make_super_photon();
-        if (quit) {
-            break;
-        }
-        harm_model.track_super_photon(photon);
-
-        ++n_super_photon_created;
-        ++n_rate;
-
-        std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start;
-        if (elapsed_seconds.count() > 1.0) {
-            double rate = n_rate / elapsed_seconds.count();
-            auto [zone_x_1, zone_x_2] = harm_model.get_zone_x();
-            spdlog::info("Rate {:.2f} ph/s, zone ({}, {})", rate, zone_x_1, zone_x_2);
-            n_rate = 0;
-            start = std::chrono::system_clock::now();
-        }
-    }
-    auto stop = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_seconds = stop - start_0;
-    spdlog::info("Final rate {:.2f} ph/s", n_super_photon_created / elapsed_seconds.count());
-    spdlog::info("Super photons:");
-    spdlog::info("\tcreated: {}", n_super_photon_created);
-    spdlog::info("\tscattered: {}", harm_model.get_n_super_photon_scattered());
-    spdlog::info("\trecorded: {}", harm_model.get_n_super_photon_recorded());
-
-    harm_model.report_spectrum(n_super_photon_created, spectrum_path);
+    harm_model.report_spectrum(spectrum_path);
 
     return 0;
 }

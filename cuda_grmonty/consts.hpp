@@ -131,4 +131,12 @@ const double l_e_0 = std::log(1.0e-12); /* location of first bin, in electron re
 
 }; /* namespace spectrum */
 
+namespace cuda {
+
+constexpr int grid_dim = 64;
+constexpr int block_dim = 64;
+constexpr int threads_per_grid = block_dim * grid_dim;
+
+}; /* namespace cuda */
+
 }; /* namespace consts */

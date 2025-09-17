@@ -7,123 +7,17 @@
 #pragma once
 
 #include <array>
+#include <semaphore>
 #include <string>
 #include <tuple>
 
 #include "cuda_grmonty/consts.hpp"
+#include "cuda_grmonty/harm_data.hpp"
 #include "cuda_grmonty/ndarray.hpp"
+#include "cuda_grmonty/photon.hpp"
+#include "cuda_grmonty/photon_queue.hpp"
 
 namespace harm {
-
-struct Header {
-    double t;          /* simulation time */
-    int n[2];          /* number of grid points in x1 and x2 directions  */
-    double x_start[4]; /* start coordinates of the grid */
-    double x_stop[4];  /* stop coordinates of the grid */
-    double dx[4];      /* grid spacing */
-    double t_final;    /* final simulation time */
-    int n_step;        /* number of simulation steps */
-    double a;          /* black hole spin parameter (dimensionless Kerr parameter) */
-    double gamma;      /* adiabatic index */
-    double courant;    /* courant number for time-stepping */
-    double dt_dump;    /* time interval between dumps */
-    double dt_log;     /* time interval for log outputs */
-    double dt_img;     /* time interval for image outputs */
-    int dt_rdump;      /* time interval of restart dumps written */
-    int cnt_dump;      /* counter for number of dumps written */
-    int cnt_img;       /* counter for number of images written */
-    int cnt_rdump;     /* counter for number of restart dumps written */
-    double dt;         /* time step size */
-    int lim;           /* slope limiter method used */
-    int failed;        /* number of failed steps in simulation */
-    double r_in;       /* inner radius of the simulation domain */
-    double r_out;      /* outer radius of the simulation domain */
-    double h_slope;    /* grid stretching parameters */
-    double r_0;        /* reference radius */
-};
-
-struct Data {
-    ndarray::NDArray<double, 2> k_rho; /* rest-mass density */
-    ndarray::NDArray<double, 2> u;     /* internal eneergy density */
-    ndarray::NDArray<double, 2> u_1;   /* covariant velocity components */
-    ndarray::NDArray<double, 2> u_2;
-    ndarray::NDArray<double, 2> u_3;
-    ndarray::NDArray<double, 2> b_1; /* contravariant magnetic field components */
-    ndarray::NDArray<double, 2> b_2;
-    ndarray::NDArray<double, 2> b_3;
-};
-
-struct Geometry {
-    ndarray::NDArray<double, 4> cov;
-    ndarray::NDArray<double, 4> con;
-    ndarray::NDArray<double, 2> det;
-};
-
-struct BLCoord {
-    double r;
-    double theta;
-};
-
-struct FluidZone {
-    double n_e;
-    double theta_e;
-    double b;
-    double u_con[consts::n_dim];
-    double b_con[consts::n_dim];
-};
-
-struct FluidParams {
-    double n_e;
-    double theta_e;
-    double b;
-    double u_con[consts::n_dim];
-    double u_cov[consts::n_dim];
-    double b_con[consts::n_dim];
-    double b_cov[consts::n_dim];
-};
-
-struct Zone {
-    int x_1;
-    int x_2;
-    int num_to_gen;
-    double dn_max;
-    bool quit_flag;
-};
-
-struct Photon {
-    double x[consts::n_dim];
-    double k[consts::n_dim];
-    double dkdlam[consts::n_dim];
-    double w;
-    double e;
-    double l;
-    double x1i;
-    double x2i;
-    double tau_abs;
-    double tau_scatt;
-    double n_e_0;
-    double theta_e_0;
-    double b_0;
-    double e_0;
-    double e_0_s;
-    int n_scatt;
-};
-
-struct Spectrum {
-    double dNdlE;
-    double dEdlE;
-    double nph;
-    double nscatt;
-    double X1iav;
-    double X2isq;
-    double X3fsq;
-    double tau_abs;
-    double tau_scatt;
-    double ne0;
-    double thetae0;
-    double b0;
-    double E0;
-};
 
 class HARMModel {
 public:
@@ -141,6 +35,45 @@ public:
     void read_file(std::string filepath);
 
     void init();
+
+    void run_simulation();
+
+    void report_spectrum(std::string filepath);
+
+    const struct Header *get_header() const { return &header_; }
+
+    const struct Data *get_data() const { return &data_; }
+
+private:
+    struct Header header_;
+    struct Data data_;
+    struct Units units_;
+
+    double bias_norm_;
+    double rh_;
+
+    int photon_n_;
+    double max_tau_scatt_;
+    double d_tau_k_;
+    double x1_min_;
+
+    uint64_t n_super_photon_created_ = 0;
+    uint64_t n_super_photon_scatt_ = 0;
+    uint64_t n_super_photon_recorded_ = 0;
+
+    int zone_x_1_ = 0;
+    int zone_x_2_ = -1;
+
+    struct Geometry geometry_;
+    ndarray::NDArray<double, 2> hotcross_table_ =
+        ndarray::NDArray<double, 2>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
+    std::array<double, consts::n_e_samp + 1> f_;
+    std::array<double, consts::n_e_samp + 1> k2_;
+    std::array<double, consts::n_e_samp + 1> weight_;
+    std::array<double, consts::nint + 1> nint_;
+    std::array<double, consts::nint + 1> dndlnu_max_;
+
+    struct Spectrum spectrum_[consts::n_th_bins][consts::n_e_bins];
 
     /**
      * @brief Initializes the metric.
@@ -167,16 +100,18 @@ public:
      */
     struct Zone get_zone();
 
-    struct Photon sample_zone_photon(struct Zone &zone);
+    struct photon::Photon sample_zone_photon(struct Zone &zone);
 
     double linear_interp_weight(double nu);
 
-    std::tuple<struct Photon, bool> make_super_photon();
+    std::tuple<struct photon::Photon, bool> make_super_photon();
 
-    void track_super_photon(struct Photon &photon);
+    void make_super_photon_async(photon::PhotonQueue &photon_queue, std::binary_semaphore &done_sem);
 
-    void scatter_super_photon(struct Photon &photon,
-                              struct Photon &photon_2,
+    void track_super_photon(struct photon::Photon &photon);
+
+    void scatter_super_photon(struct photon::Photon &photon,
+                              struct photon::Photon &photon_p,
                               const struct FluidParams &fluid_params,
                               const ndarray::NDArray<double, 2> &g_cov,
                               double b_unit) const;
@@ -185,9 +120,9 @@ public:
                                  double (&p)[consts::n_dim],
                                  double (&kp)[consts::n_dim]) const;
 
-    void push_photon(struct Photon &photon, double dl, int n);
+    void push_photon(struct photon::Photon &photon, double dl, int n);
 
-    void record_super_photon(const struct Photon &photon);
+    void record_super_photon(const struct photon::Photon &photon, int n_step);
 
     std::tuple<double, double> init_zone(int x_1, int x_2) const;
 
@@ -200,64 +135,15 @@ public:
     void
     init_dkdlam(const double (&x)[consts::n_dim], const double (&k_con)[consts::n_dim], double (&d_k)[consts::n_dim]);
 
-    bool stop_criterion(struct Photon &photon) const;
+    bool stop_criterion(struct photon::Photon &photon) const;
 
-    bool record_criterion(const struct Photon &photon) const;
+    bool record_criterion(const struct photon::Photon &photon) const;
 
     double step_size(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim]);
-
-    void report_spectrum(int n_super_photon_created, std::string filepath);
 
     struct BLCoord get_bl_coord(const double (&x)[consts::n_dim]) const;
 
     void get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const;
-
-    const struct Header *get_header() const { return &header_; }
-
-    const struct Data *get_data() const { return &data_; }
-
-    uint64_t get_n_super_photon_recorded() const { return n_super_photon_recorded_; }
-
-    uint64_t get_n_super_photon_scattered() const { return n_super_photon_scatt_; }
-
-    std::tuple<int, int> get_zone_x() const { return {zone_x_1_, zone_x_2_}; }
-
-private:
-    struct Header header_;
-    struct Data data_;
-
-    double bias_norm_;
-    double rh_;
-
-    uint64_t n_super_photon_scatt_ = 0;
-    uint64_t n_super_photon_recorded_ = 0;
-
-    int photon_n_;
-    double mass_unit_;
-    double l_unit_;
-    double t_unit_;
-    double rho_unit_;
-    double u_unit_;
-    double b_unit_;
-    double theta_e_unit_;
-    double n_e_unit_;
-    double max_tau_scatt_;
-    double d_tau_k_;
-    double x1_min_;
-
-    int zone_x_1_ = 0;
-    int zone_x_2_ = -1;
-
-    struct Geometry geometry_;
-    ndarray::NDArray<double, 2> hotcross_table_ =
-        ndarray::NDArray<double, 2>({consts::hotcross::n_w + 1, consts::hotcross::n_t + 1});
-    std::array<double, consts::n_e_samp + 1> f_;
-    std::array<double, consts::n_e_samp + 1> k2_;
-    std::array<double, consts::n_e_samp + 1> weight_;
-    std::array<double, consts::nint + 1> nint_;
-    std::array<double, consts::nint + 1> dndlnu_max_;
-
-    struct Spectrum spectrum_[consts::n_th_bins][consts::n_e_bins];
 };
 
 }; /* namespace harm */

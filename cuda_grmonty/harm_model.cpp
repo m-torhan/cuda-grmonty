@@ -31,6 +31,10 @@
 #include "cuda_grmonty/radiation.hpp"
 #include "cuda_grmonty/tetrads.hpp"
 
+#ifdef CUDA
+#include "cuda_grmonty/super_photon.cuh"
+#endif /* CUDA */
+
 namespace harm {
 
 static double interp_scalar(const ndarray::NDArray<double, 2> &var, int i, int j, const double (&coeff)[consts::n_dim]);
@@ -318,6 +322,22 @@ void HARMModel::run_simulation() {
 
     spdlog::info("Starting main loop");
 
+#ifdef CUDA
+    cuda_super_photon::alloc_memory(header_, data_, units_, hotcross_table_, f_, k2_);
+
+    photon::PhotonQueue photon_queue(consts::cuda::threads_per_grid);
+    std::binary_semaphore done_sem{0};
+
+    std::thread make_super_photon_thread(
+        &HARMModel::make_super_photon_async, this, std::ref(photon_queue), std::ref(done_sem));
+
+    cuda_super_photon::track_super_photons(
+        bias_norm_, max_tau_scatt_, photon_queue, done_sem, spectrum_, n_super_photon_recorded_, n_super_photon_scatt_);
+
+    make_super_photon_thread.join();
+
+    cuda_super_photon::free_memory();
+#else  /* CUDA */
     int n_rate = 0;
     auto start_iter = start;
 
@@ -340,6 +360,7 @@ void HARMModel::run_simulation() {
             start_iter = std::chrono::system_clock::now();
         }
     }
+#endif /* CUDA */
 
     auto stop = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = stop - start;
@@ -750,6 +771,34 @@ std::tuple<struct photon::Photon, bool> HARMModel::make_super_photon() {
     }
 
     return {photon, quit};
+}
+
+void HARMModel::make_super_photon_async(photon::PhotonQueue &photon_queue, std::binary_semaphore &done_sem) {
+    auto start_iter = std::chrono::system_clock::now();
+    int n_rate = 0;
+
+    while (true) {
+        auto [photon, quit] = make_super_photon();
+
+        photon_queue.enqueue(photon);
+
+        ++n_super_photon_created_;
+        ++n_rate;
+
+        std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start_iter;
+        if (elapsed_seconds.count() > 1.0) {
+            double rate = n_rate / elapsed_seconds.count();
+            spdlog::info("Rate {:.2f} ph/s, zone ({} {})", rate, zone_x_1_, zone_x_2_);
+            n_rate = 0;
+            start_iter = std::chrono::system_clock::now();
+        }
+
+        if (quit) {
+            break;
+        }
+    }
+
+    done_sem.release();
 }
 
 void HARMModel::track_super_photon(struct photon::Photon &photon) {
