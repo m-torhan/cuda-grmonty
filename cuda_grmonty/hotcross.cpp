@@ -12,7 +12,7 @@
 #include "cuda_grmonty/hotcross.hpp"
 #include "cuda_grmonty/ndarray.hpp"
 #ifdef CUDA
-#include "cuda_grmonty/hotcross.cuh"
+#include "cuda_grmonty/hotcross_table.cuh"
 #endif /* CUDA */
 
 namespace hotcross {

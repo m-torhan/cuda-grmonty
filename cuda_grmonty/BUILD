@@ -75,10 +75,21 @@ cc_library(
 
 cuda_library(
     name = "cuda_hotcross",
-    srcs = ["hotcross.cu"],
     hdrs = ["hotcross.cuh"],
     deps = [
         ":consts",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
+cuda_library(
+    name = "cuda_hotcross_table",
+    srcs = ["hotcross_table.cu"],
+    hdrs = ["hotcross_table.cuh"],
+    deps = [
+        ":consts",
+        ":cuda_hotcross",
+        ":cuda_utils",
         ":ndarray",
     ],
     target_compatible_with = requires_cuda(),
@@ -93,7 +104,7 @@ cc_library(
         ":ndarray",
         "@spdlog//:spdlog",
     ] + select({
-        ":cuda_enabled": [":cuda_hotcross"],
+        ":cuda_enabled": [":cuda_hotcross_table"],
         "//conditions:default": [],
     }),
 )
