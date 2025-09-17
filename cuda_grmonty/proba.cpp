@@ -88,7 +88,7 @@ void sample_electron_distr_p(const double (&k)[consts::n_dim], double (&p)[const
     double c_phi = std::cos(phi);
 
     double c_th = mu;
-    double s_th = sqrt(1. - mu * mu);
+    double s_th = std::sqrt(1. - mu * mu);
 
     p[0] = gamma_e;
     p[1] = gamma_e * beta_e * (c_th * v0x + s_th * (c_phi * v1x + s_phi * v2x));
