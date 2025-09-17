@@ -19,9 +19,46 @@ config_setting(
     values = {"define": "CUDA=true"},
 )
 
+cuda_library(
+    name = "cuda_utils",
+    hdrs = ["utils.cuh"],
+    target_compatible_with = requires_cuda(),
+)
+
 cc_library(
     name = "consts",
     hdrs = ["consts.hpp"],
+)
+
+cc_library(
+    name = "photon",
+    hdrs = ["photon.hpp"],
+    deps = [
+        ":consts",
+    ],
+)
+
+cc_library(
+    name = "photon_queue",
+    srcs = ["photon_queue.cpp"],
+    hdrs = ["photon_queue.hpp"],
+    deps = [
+        ":photon",
+    ],
+)
+
+cc_library(
+    name = "harm_data",
+    hdrs = ["harm_data.hpp"],
+    deps = [
+        ":ndarray",
+    ],
+)
+
+cc_library(
+    name = "cuda_harm_data",
+    hdrs = ["harm_data.cuh"],
+    target_compatible_with = requires_cuda(),
 )
 
 cc_library(
@@ -38,6 +75,15 @@ cc_library(
         ":consts",
         ":monty_rand",
     ],
+)
+
+cuda_library(
+    name = "cuda_proba",
+    hdrs = ["proba.cuh"],
+    deps = [
+        ":consts",
+    ],
+    target_compatible_with = requires_cuda(),
 )
 
 cc_library(
@@ -65,6 +111,15 @@ cc_library(
         ":consts",
         ":ndarray",
     ],
+)
+
+cuda_library(
+    name = "cuda_tetrads",
+    hdrs = ["tetrads.cuh"],
+    deps = [
+        ":consts",
+    ],
+    target_compatible_with = requires_cuda(),
 )
 
 cc_library(
@@ -144,29 +199,87 @@ cc_library(
     ],
 )
 
+cuda_library(
+    name = "cuda_jnu_mixed",
+    hdrs = ["jnu_mixed.cuh"],
+    deps = [
+        ":consts",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
+cuda_library(
+    name = "cuda_radiation",
+    hdrs = ["radiation.cuh"],
+    deps = [
+        ":consts",
+        ":cuda_hotcross",
+        ":cuda_jnu_mixed",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
+cuda_library(
+    name = "cuda_harm_model",
+    hdrs = ["harm_model.cuh"],
+    deps = [
+        ":consts",
+        ":cuda_harm_data",
+        ":cuda_tetrads",
+        ":cuda_utils",
+        ":harm_data",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
+cuda_library(
+    name = "cuda_super_photon",
+    srcs = ["super_photon.cu"],
+    hdrs = ["super_photon.cuh"],
+    deps = [
+        ":cuda_harm_data",
+        ":cuda_harm_model",
+        ":cuda_proba",
+        ":cuda_radiation",
+        ":cuda_utils",
+        ":harm_data",
+        ":photon",
+        ":photon_queue",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
 cc_library(
     name = "harm_model",
     srcs = ["harm_model.cpp"],
     hdrs = ["harm_model.hpp"],
     deps = [
         ":consts",
+        ":harm_data",
         ":hotcross",
         ":jnu_mixed",
         ":monty_rand",
         ":ndarray",
+        ":photon",
+        ":photon_queue",
         ":proba",
         ":radiation",
         ":tetrads",
         "@spdlog//:spdlog",
-    ],
+    ] + select({
+        ":cuda_enabled": [":cuda_super_photon"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_binary(
     name = "main",
     srcs = ["main.cpp"],
     deps = [
+        ":consts",
         ":harm_model",
         ":monty_rand",
+        ":photon",
         ":parse_verbosity",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
