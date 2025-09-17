@@ -59,7 +59,7 @@ public:
     template <unsigned int K = N, typename = std::enable_if_t<K == 0>>
     operator T() const;
 
-    T *data() noexcept { return data_.get(); }
+    T *data() const noexcept { return data_.get(); }
 
     /**
      * @brief Returns number of dimensions.
