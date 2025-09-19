@@ -10,28 +10,81 @@
 
 namespace cuda_tetrads {
 
+/**
+ * @brief Kronecker delta function.
+ *
+ * @param[in] i First index.
+ * @param[in] j Second index.
+ *
+ * @return 1.0 if i == j, 0.0 otherwise.
+ */
 static __device__ double delta(int i, int j) { return i == j ? 1.0 : 0.0; }
 
+/**
+ * @brief Transform a contravariant vector from coordinate frame to tetrad frame.
+ *
+ * @param[in]  e_cov    Covariant tetrad basis vectors (e_mu^a).
+ * @param[in]  k        Contravariant vector in coordinate frame.
+ * @param[out] k_tetrad Resulting vector in tetrad frame.
+ */
 static __device__ void coordinate_to_tetrad(const double (&e_cov)[consts::n_dim][consts::n_dim],
                                             const double (&k)[consts::n_dim],
                                             double (&k_tetrad)[consts::n_dim]);
 
+/**
+ * @brief Transform a tetrad-frame vector to the coordinate frame.
+ *
+ * @param[in]  e_con    Contravariant tetrad basis vectors (e^mu_a).
+ * @param[in]  k_tetrad Vector in tetrad frame.
+ * @param[out] k        Resulting vector in coordinate frame.
+ */
 static __device__ void tetrad_to_coordinate(const double (&e_con)[consts::n_dim][consts::n_dim],
                                             const double (&k_tetrad)[consts::n_dim],
                                             double (&k)[consts::n_dim]);
 
+/**
+ * @brief Construct an orthonormal tetrad for a given 4-velocity.
+ *
+ * @param[in]  u_con Contravariant 4-velocity of the fluid.
+ * @param[in]  trial Initial trial vector for tetrad construction (e.g., spatial direction).
+ * @param[in]  g_cov Covariant metric tensor at the point.
+ * @param[out] e_con Contravariant tetrad basis vectors.
+ * @param[out] e_cov Covariant tetrad basis vectors.
+ */
 static __device__ void make_tetrad(const double (&u_con)[consts::n_dim],
                                    double (&trial)[consts::n_dim],
                                    const double (&g_cov)[consts::n_dim][consts::n_dim],
                                    double (&e_con)[consts::n_dim][consts::n_dim],
                                    double (&e_cov)[consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Lower a contravariant vector using the metric tensor.
+ *
+ * @param[in]  u_con Input contravariant vector.
+ * @param[in]  g_cov Covariant metric tensor.
+ * @param[out] u_cov Resulting covariant vector.
+ */
 static __device__ void lower(const double (&u_con)[consts::n_dim],
                              const double (&g_cov)[consts::n_dim][consts::n_dim],
                              double (&u_cov)[consts::n_dim]);
 
+/**
+ * @brief Normalize a contravariant vector with respect to the metric g_cov.
+ *
+ * @param[in,out] v_con Vector to normalize (modified in place).
+ * @param[in]     g_cov Covariant metric tensor used for normalization.
+ */
 static __device__ void normalize(double (&v_con)[consts::n_dim], const double (&g_cov)[consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Project vector v_con_a orthogonally to v_con_b using the metric g_cov.
+ *
+ * The resulting vector is stored in v_con_a.
+ *
+ * @param[in,out] v_con_a Vector to be projected (modified in place).
+ * @param[in]     v_con_b Vector to project out of v_con_a.
+ * @param[in]     g_cov   Covariant metric tensor used for projection.
+ */
 static __device__ void project_out(double (&v_con_a)[consts::n_dim],
                                    double (&v_con_b)[consts::n_dim],
                                    const double (&g_cov)[consts::n_dim][consts::n_dim]);

@@ -14,6 +14,17 @@
 
 namespace proba {
 
+/**
+ * @brief Compute the Klein-Nishina differential cross-section.
+ *
+ * Calculates the probability of Compton scattering for a photon with incoming energy `a` and outgoing energy `ap`
+ * using the Klein-Nishina formula.
+ *
+ * @param a  Incoming photon energy (normalized units).
+ * @param ap Scattered photon energy (normalized units).
+ *
+ * @return Klein-Nishina differential cross-section value.
+ */
 static double klein_nishina(double a, double ap);
 
 void sample_electron_distr_p(const double (&k)[consts::n_dim], double (&p)[consts::n_dim], double theta_e) {

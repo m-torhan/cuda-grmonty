@@ -10,6 +10,14 @@
 
 namespace cuda_hotcross {
 
+/**
+ * @brief Initializes the hot cross-section table on the GPU.
+ *
+ * This function allocates and populates the device table used for fast lookup of angle-averaged Compton scattering
+ * cross-sections over a grid of photon energies and electron temperatures.
+ *
+ * @param table Reference to an NDArray that will store the initialized table.
+ */
 void init_table(ndarray::NDArray<double, 2> &table);
 
 }; /* namespace cuda_hotcross */

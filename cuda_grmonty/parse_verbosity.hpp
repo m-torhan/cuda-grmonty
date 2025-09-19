@@ -14,22 +14,22 @@
 namespace spdlog::level {
 
 /**
- * Converts string to spdlog level enum
+ * @brief Parse a logging verbosity level from text.
  *
- * @param text Logging verbosity in text format
- * @param level Logging verbosity in enum format
- * @param error Parsing error
+ * @param[in] text   Logging verbosity in text format (e.g., "info", "debug").
+ * @param[out] level Output parameter storing the parsed verbosity level.
+ * @param[out] error Output parameter storing an error message if parsing fails.
  *
- * @returns True if verbosity was succesfull
+ * @returns True if parsing verbosity was succesfull, false otherwise.
  */
 bool AbslParseFlag(absl::string_view text, level_enum *level, std::string *error);
 
 /**
- * Converts spdlog level enum to string
+ * Converts spdlog level enum to string form.
  *
- * @param level Logging verbosity
+ * @param level Logging verbosity level num.
  *
- * @returns Logging verbosity as string
+ * @returns Logging verbosity as string (e.g., "info", "debug").
  */
 std::string AbslUnparseFlag(level_enum level);
 

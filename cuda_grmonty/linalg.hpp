@@ -15,16 +15,40 @@ namespace linalg {
 
 namespace matrix {
 
+/**
+ * @brief Compute the determinant of a 1x1 matrix.
+ *
+ * @tparam T     Scalar type of the matrix (e.g., int, float, double).
+ * @param matrix Pointer to the first element of the matrix.
+ *
+ * @return Determinant of the 1x1 matrix.
+ */
 template <typename T>
 static T det_1x1(T *matrix) {
     return matrix[0];
 }
 
+/**
+ * @brief Compute the determinant of a 2x2 matrix.
+ *
+ * @tparam T     Scalar type of the matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the 2x2 matrix.
+ */
 template <typename T>
 static T det_2x2(T *matrix) {
     return (matrix[0] * matrix[3] - matrix[1] * matrix[2]);
 }
 
+/**
+ * @brief Compute the determinant of a 3x3 matrix.
+ *
+ * @tparam T     Scalar type of the matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the 3x3 matrix.
+ */
 template <typename T>
 static T det_3x3(T *matrix) {
     /* clang-format off */
@@ -36,6 +60,14 @@ static T det_3x3(T *matrix) {
     /* clang-format on */
 }
 
+/**
+ * @brief Compute the determinant of a 4x4 matrix.
+ *
+ * @tparam T     Scalar type of the matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the 4x4 matrix.
+ */
 template <typename T>
 static T det_4x4(T *matrix) {
     /* clang-format off */
@@ -64,6 +96,15 @@ static T det_4x4(T *matrix) {
     /* clang-format on */
 }
 
+/**
+ * @brief Compute the determinant of an n×n matrix (floating-point specialization).
+ *
+ * @tparam T     Floating-point type (float, double).
+ * @param n      Dimension of the square matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the n×n matrix as a floating-point value.
+ */
 template <typename T>
 static typename std::enable_if<std::is_floating_point<T>::value, T>::type det_nxn_fp(const int n, T *matrix) {
     int sign = 1;
@@ -107,6 +148,15 @@ static typename std::enable_if<std::is_floating_point<T>::value, T>::type det_nx
     return result;
 }
 
+/**
+ * @brief Compute the determinant of an n×n matrix (integer specialization).
+ *
+ * @tparam T     Integral type (int, long, etc.).
+ * @param n      Dimension of the square matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the n×n matrix as an integer value.
+ */
 template <typename T>
 static typename std::enable_if<!std::is_floating_point<T>::value, T>::type det_nxn_int(const int n, T *matrix) {
     int sign = 1;
@@ -149,6 +199,18 @@ static typename std::enable_if<!std::is_floating_point<T>::value, T>::type det_n
     return sign * matrix[n * n - 1];
 }
 
+/**
+ * @brief Dispatch determinant calculation for an n×n matrix.
+ *
+ * Selects specialized functions for 1×1 through 4×4 matrices. For larger matrices, dispatches to either floating-point
+ * or integer general determinant functions based on the type T.
+ *
+ * @tparam T     Scalar type of the matrix.
+ * @param n      Dimension of the square matrix.
+ * @param matrix Pointer to the first element of the matrix, stored in row-major order.
+ *
+ * @return Determinant of the n×n matrix.
+ */
 template <typename T>
 T det(int n, T *matrix) {
     if (n == 1) {

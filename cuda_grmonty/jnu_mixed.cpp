@@ -15,12 +15,43 @@
 
 namespace jnu_mixed {
 
+/**
+ * @brief Computes the integrand for the jnu emissivity integral.
+ *
+ * @param th Dimensionless electron temperature.
+ * @param k  Dimensionless photon energy.
+ *
+ * @return Value of the integrand at (th, k).
+ */
 static double jnu_integrand(double th, double k);
 
+/**
+ * @brief Compute the emissivity table entry for a given dimensionless photon energy.
+ *
+ * @param k Dimensionless photon energy.
+ *
+ * @return Emissivity corresponding to k.
+ */
 static double emiss_table_f(double k);
 
+/**
+ * @brief Linearly interpolate k2 values from a precomputed table for a given electron temperature.
+ *
+ * @param theta_e  Electron dimensionless temperature.
+ * @param k2_table Table of k2 values.
+ *
+ * @return Interpolated k2 value.
+ */
 static double linear_interp_k2(double theta_e, const std::array<double, consts::n_e_samp + 1> &k2_table);
 
+/**
+ * @brief Linearly interpolate f values from a precomputed table for a given photon energy.
+ *
+ * @param k       Dimensionless photon energy.
+ * @param f_table Table of f values.
+ *
+ * @return Interpolated f value.
+ */
 static double linear_interp_f(double k, const std::array<double, consts::n_e_samp + 1> &f_table);
 
 void init_emiss_tables(std::array<double, consts::n_e_samp + 1> &f, std::array<double, consts::n_e_samp + 1> &k2) {

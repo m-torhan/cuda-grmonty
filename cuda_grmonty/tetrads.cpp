@@ -12,10 +12,33 @@
 
 namespace tetrads {
 
+/**
+ * @brief Kronecker delta function.
+ *
+ * @param i First index.
+ * @param j Second index.
+ *
+ * @return 1.0 if i == j, 0.0 otherwise.
+ */
 static double delta(int i, int j) { return i == j ? 1.0 : 0.0; }
 
+/**
+ * @brief Normalize a contravariant vector with respect to the metric g_cov.
+ *
+ * @param[in,out] v_con Vector to normalize (modified in place).
+ * @param[in] g_cov     Covariant metric tensor used for normalization.
+ */
 static void normalize(double (&v_con)[consts::n_dim], const ndarray::NDArray<double, 2> &g_cov);
 
+/**
+ * @brief Project vector v_con_a orthogonally to v_con_b using the metric g_cov.
+ *
+ * The resulting vector is stored in v_con_a.
+ *
+ * @param[in,out] v_con_a Vector to be projected (modified in place).
+ * @param[in] v_con_b     Vector to project out of v_con_a.
+ * @param[in] g_cov       Covariant metric tensor used for projection.
+ */
 static void project_out(double (&v_con_a)[consts::n_dim],
                         double (&v_con_b)[consts::n_dim],
                         const ndarray::NDArray<double, 2> &g_cov);

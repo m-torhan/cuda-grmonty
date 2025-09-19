@@ -19,85 +19,247 @@
 namespace ndarray {
 
 /**
- * @brief N-dimensional array.
+ * @brief N-dimensional array container with basic indexing and assignment operators.
+ *
+ * Provides multidimensional storage using a flat vector underneath. Supports copy, move, and element-wise access
+ * through operator() overloads. Dimension checks are enforced via template metaprogramming.
+ *
+ * @tparam T Element type stored in the array.
+ * @tparam N Number of dimensions.
  */
 template <typename T, unsigned int N>
 class NDArray {
 public:
+    /**
+     * @brief Type alias for the index representation of an N-dimensional array.
+     *
+     * Each element of the array represents the size in that dimension.
+     */
     using Index = std::array<int, N>;
 
+    /**
+     * @brief Default constructor, creates an uninitialized array (no allocated storage).
+     */
     NDArray() : data_(nullptr) {}
+
+    /**
+     * @brief Construct an array with the given shape.
+     *
+     * @param shape Sizes of each dimension.
+     */
     explicit NDArray(const Index &shape);
+
+    /**
+     * @brief Construct an array with a given shape and initial values.
+     *
+     * @param shape  Sizes of each dimension.
+     * @param values Initial values to populate the array with.
+     */
     NDArray(const Index &shape, const std::vector<T> &values);
+
+    /**
+     * @brief Copy constructor.
+     */
     NDArray(const NDArray<T, N> &other);
+
+    /**
+     * @brief Prevent construction from NDArray of different dimension.
+     *
+     * @tparam M Other array dimensionality (must differ from N).
+     */
     template <unsigned int M, typename = std::enable_if_t<N != M>>
     NDArray(const NDArray<T, M> &other) = delete;
+
+    /**
+     * @brief Move constructor.
+     */
     NDArray(NDArray<T, N> &&other) = default;
+
+    /**
+     * @brief Destructor.
+     */
     ~NDArray() {}
 
+    /**
+     * @brief Copy assignment operator.
+     */
     NDArray<T, N> &operator=(const NDArray<T, N> &other);
+
+    /**
+     * @brief Prevent assignment from NDArray of different dimension.
+     *
+     * @tparam M Other array dimensionality (must differ from N).
+     */
     template <unsigned int M, typename = std::enable_if_t<N != M>>
     NDArray<T, N> &operator=(NDArray<T, M> &other) = delete;
+
+    /**
+     * @brief Move assignment operator.
+     */
     NDArray<T, N> &operator=(NDArray<T, N> &&other) = default;
+
+    /**
+     * @brief Assign scalar value to all elements of the array.
+     */
     T operator=(T other);
 
+    /**
+     * @brief Return a lower-dimensional NDArray view (non-const).
+     *
+     * Allows partial indexing with fewer than N indices, returning an NDArray of dimension N - sizeof...(Indices).
+     *
+     * @tparam Indices Index types (variadic).
+     * @param indices  Partial indices specifying the slice.
+     *
+     * @return Sub-array view of lower dimensionality.
+     */
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) < N>>
     NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices) noexcept;
 
+    /**
+     * @brief Return a lower-dimensional NDArray view (const version).
+     *
+     * Allows partial indexing with fewer than N indices, returning an NDArray of dimension N - sizeof...(Indices).
+     *
+     * @tparam Indices Index types (variadic).
+     * @param indices  Partial indices specifying the slice.
+     *
+     * @return Const sub-array view of lower dimensionality.
+     */
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) < N>>
     const NDArray<T, N - sizeof...(Indices)> operator()(Indices... indices) const noexcept;
 
+    /**
+     * @brief Return an element of the array (const version).
+     *
+     * Requires exactly N indices to fully specify the element position.
+     *
+     * @tparam Indices Index types (variadic).
+     * @param indices  Indices for each dimension.
+     *
+     * @return Element value at the given indices.
+     */
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) == N>>
     T operator()(Indices... indices) const noexcept;
 
+    /**
+     * @brief Return a reference to an element of the array (non-const).
+     *
+     * Requires exactly N indices to fully specify the element position.
+     *
+     * @tparam Indices Index types (variadic).
+     * @param indices  Indices for each dimension.
+     *
+     * @return Reference to the element at the given indices.
+     */
     template <typename... Indices, typename = std::enable_if_t<sizeof...(Indices) == N>>
     T &operator()(Indices... indices) noexcept;
 
     /**
-     * @brief Converts zero-dimensional array to single number.
+     * @brief Convert a zero-dimensional array into a scalar value.
+     *
+     * This operator allows an NDArray<...,0> to be implicitly converted into its contained value.
+     *
+     * @tparam K  Dimension parameter, must equal 0 to enable this operator.
+     *
+     * @return Scalar value stored in the array.
      */
     template <unsigned int K = N, typename = std::enable_if_t<K == 0>>
     operator T() const;
 
+    /**
+     * @brief Returns pointer to the underlying raw data buffer.
+     *
+     * @return Raw pointer to the array data.
+     */
     T *data() const noexcept { return data_.get(); }
 
     /**
-     * @brief Returns number of dimensions.
+     * @brief Returns the number of dimensions of the array.
+     *
+     * @return Dimensionality (N).
      */
     unsigned int ndim() const noexcept { return N; }
 
     /**
-     * @brief Returns number of elements.
+     * @brief Returns the total number of elements in the array.
+     *
+     * @return Number of elements in the array.
      */
     unsigned int size() const noexcept;
 
     /**
-     * @brief Returns shape of the array.
+     * @brief Returns the shape of the array.
+     *
+     * @return Array of length N representing the size of each dimension.
      */
     std::array<int, N> shape() const noexcept { return shape_; }
 
     /**
-     * @brief Reads values from input stream.
+     * @brief Read array values from an input stream.
+     *
+     * Reads elements in row-major order. Shape must already be defined.
+     *
+     * @tparam U    Element type of the array.
+     * @tparam M    Dimensionality of the array.
+     * @param is    Input stream.
+     * @param array Target array to populate.
+     *
+     * @return Reference to the input stream.
      */
     template <typename U, unsigned int M>
     friend std::istream &operator>>(std::istream &is, const NDArray<U, M> &array);
 
     /**
-     * @brief 2D array determinant.
+     * @brief Compute determinant of a 2D array.
+     *
+     * @tparam K Dimension parameter, must equal 2 to enable this method.
+     *
+     * @return Determinant of the 2D array.
      */
     template <unsigned int K = N, typename = std::enable_if_t<K == 2>>
     T det() const;
 
 private:
+    /**
+     * @brief Compute strides for indexing based on current shape.
+     *
+     * Strides define the number of elements to skip in the flat buffer when advancing along each dimension.
+     */
     void compute_strides();
+
+    /**
+     * @brief Compute the flat buffer index for a given N-dimensional index.
+     *
+     * @param index N-dimensional index in row-major order.
+     *
+     * @return Flat buffer offset corresponding to the index.
+     */
     unsigned int flat_index(const std::array<int, N> &index) const noexcept;
 
+    /**
+     * @brief Shared pointer to array data.
+     */
     std::shared_ptr<T[]> data_;
+
+    /**
+     * @brief Offset applied to the data pointer (used for views).
+     */
     int data_offset_;
+
+    /**
+     * @brief Shape of the array (size of each dimension).
+     */
     std::array<int, N> shape_;
+
+    /**
+     * @brief Strides for row-major indexing.
+     */
     std::array<int, N> strides_;
 
-    /* Make all NDArray<T, M> friends (M can be any dimension) */
+    /**
+     * @brief Allow all NDArray<T, M> specializations to access private members.
+     */
     template <typename, unsigned int>
     friend class NDArray;
 };

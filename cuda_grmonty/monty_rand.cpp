@@ -10,6 +10,12 @@
 
 namespace monty_rand {
 
+/**
+ * @brief Mersenne Twister random number engine.
+ *
+ * A globally accessible instance of std::mt19937 used for deterministic and reproducible random number generation
+ * across Monte Carlo routines.
+ */
 static std::mt19937 rd;
 
 void init(int seed) { rd = std::mt19937(seed); }

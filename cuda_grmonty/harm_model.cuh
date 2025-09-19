@@ -15,12 +15,44 @@
 
 namespace cuda_harm {
 
+/**
+ * @brief Compute the contravariant metric tensor g^μν at a given coordinate.
+ *
+ * @param header Pointer to the HARM simulation header (grid and domain info).
+ * @param x      Coordinate array (size = consts::n_dim).
+ * @param g_con  Output contravariant metric tensor g^μν.
+ */
 static __device__ void
 gcon_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_con)[consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Compute the covariant metric tensor g_μν at a given coordinate.
+ *
+ * @param header Pointer to the HARM simulation header (grid and domain info).
+ * @param x      Coordinate array (size = consts::n_dim).
+ * @param g_cov  Output covariant metric tensor g_μν.
+ */
 static __device__ void
 gcov_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_cov)[consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Interpolate fluid parameters (density, temperature, velocity, magnetic field) at a coordinate.
+ *
+ * @param header Pointer to the HARM simulation header (grid and domain info).
+ * @param units  Pointer to simulation units for normalization/scaling.
+ * @param k_rho  Array of rest-mass density values.
+ * @param u      Array of internal energy density values.
+ * @param u_1    Array of covariant velocity component u1.
+ * @param u_2    Array of covariant velocity component u2.
+ * @param u_3    Array of covariant velocity component u3.
+ * @param b_1    Array of contravariant magnetic field component b1.
+ * @param b_2    Array of contravariant magnetic field component b2.
+ * @param b_3    Array of contravariant magnetic field component b3.
+ * @param x      Coordinate array (size = consts::n_dim).
+ * @param g_cov  Covariant metric tensor g_μν at x.
+ *
+ * @return Interpolated FluidParams structure.
+ */
 static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
                                                      const harm::Units *units,
                                                      const double *__restrict__ k_rho,
@@ -34,11 +66,40 @@ static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
                                                      const double (&x)[consts::n_dim],
                                                      const double (&g_cov)[consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Convert Cartesian-like coordinates to Boyer–Lindquist coordinates.
+ *
+ * @param header Pointer to the HARM simulation header (black hole parameters).
+ * @param x      Coordinate array (size = consts::n_dim).
+ *
+ * @return BLCoord structure with (r, θ).
+ */
 static __device__ harm::BLCoord get_bl_coord(const harm::Header *header, const double (&x)[consts::n_dim]);
 
+/**
+ * @brief Convert coordinates to grid indices with fractional offsets.
+ *
+ * @param header Pointer to the HARM simulation header (grid info).
+ * @param x      Coordinate array (size = consts::n_dim).
+ * @param i      Output grid index along x1.
+ * @param j      Output grid index along x2.
+ * @param del_i  Output fractional distance within x1 cell.
+ * @param del_j  Output fractional distance within x2 cell.
+ */
 static __device__ void
 x_to_ij(const harm::Header *header, const double (&x)[consts::n_dim], int &i, int &j, double &del_i, double &del_j);
 
+/**
+ * @brief Perform bilinear interpolation of a scalar variable on the grid.
+ *
+ * @param var   Pointer to flattened array of variable values.
+ * @param var_n Stride or leading dimension of var (grid width in x2).
+ * @param i     Base grid index in x1 direction.
+ * @param j     Base grid index in x2 direction.
+ * @param coeff Interpolation coefficients (size = consts::n_dim).
+ *
+ * @return Interpolated scalar value.
+ */
 static __device__ double
 interp_scalar(const double *var, int var_n, int i, int j, const double (&coeff)[consts::n_dim]);
 

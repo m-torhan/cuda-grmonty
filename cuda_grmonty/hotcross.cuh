@@ -14,18 +14,72 @@
 
 namespace cuda_hotcross {
 
+/**
+ * @brief Compute the total angle-averaged Compton scattering cross-section (CUDA device version).
+ *
+ * @param w       Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ * @param theta_e Dimensionless electron temperature (θ_e = k * T_e / (m_e * c^2)).
+ *
+ * @return Total angle-averaged Compton scattering cross-section, normalized to the Thomson cross-section (σ_T).
+ */
 static __device__ double total_compton_cross_num(double w, double theta_e);
 
+/**
+ * @brief Evaluate the Klein–Nishina differential cross-section kernel (CUDA device version).
+ *
+ * @param w Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ *
+ * @return Klein–Nishina scattering factor, normalized to σ_T.
+ */
 static __device__ double hc_klein_nishina(double w);
 
+/**
+ * @brief Compute the differential electron distribution with respect to Lorentz factor γ_e (CUDA device version).
+ *
+ * @param theta_e Dimensionless electron temperature (θ_e = k * T_e / (m_e * c^2)).
+ * @param gamma_e Electron Lorentz factor.
+ *
+ * @return Probability density dN/dγ_e for electrons at the given temperature.
+ */
 static __device__ double dnd_gamma_e(double theta_e, double gamma_e);
 
+/**
+ * @brief Compute boosted scattering cross-section contribution for given photon–electron kinematics
+ *        (CUDA device version).
+ *
+ * @param w       Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ * @param mu_e    Cosine of the electron pitch angle.
+ * @param gamma_e Electron Lorentz factor.
+ *
+ * @return Contribution to cross-section in boosted (electron rest-frame) scattering calculation.
+ */
 static __device__ double boostcross(double w, double mu_e, double gamma_e);
 
+/**
+ * @brief Compute the modified Bessel function of the second kind, order 0 (K₀).
+ *
+ * @param x Argument to the Bessel function (must be positive).
+ *
+ * @return Value of K₀(x).
+ */
 static __device__ double cyl_bessel_k0(double x);
 
+/**
+ * @brief Compute the modified Bessel function of the second kind, order 1 (K₁).
+ *
+ * @param x Argument to the Bessel function (must be positive).
+ *
+ * @return Value of K₁(x).
+ */
 static __device__ double cyl_bessel_k1(double x);
 
+/**
+ * @brief Compute the modified Bessel function of the second kind, order 2 (K₂).
+ *
+ * @param x Argument to the Bessel function (must be positive).
+ *
+ * @return Value of K₂(x).
+ */
 static __device__ double cyl_bessel_k2(double x);
 
 static __device__ double total_compton_cross_lkup(double w, double theta_e, const double *__restrict__ hotcross_table) {

@@ -13,24 +13,87 @@
 
 namespace cuda_proba {
 
+/**
+ * @brief Sample an electron momentum vector from a relativistic Maxwell-Jüttner distribution.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param k         Incoming photon 4-momentum vector.
+ * @param p         Output electron 3-momentum vector.
+ * @param theta_e   Electron dimensionless temperature.
+ */
 static __device__ void sample_electron_distr_p(curandStatePhilox4_32_10_t *rng_state,
                                                const double (&k)[consts::n_dim],
                                                double (&p)[consts::n_dim],
                                                double theta_e);
 
+/**
+ * @brief Sample electron Lorentz factor (gamma) and speed (beta) from a relativistic thermal distribution.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param gamma_e   Output Lorentz factor.
+ * @param beta_e    Output speed (v/c).
+ */
 static __device__ void
 sample_beta_distr(curandStatePhilox4_32_10_t *rng_state, double theta_e, double *gamma_e, double *beta_e);
 
+/**
+ * @brief Sample the y parameter for the electron energy distribution.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param theta_e   Electron dimensionless temperature.
+ *
+ * @return Sampled y value.
+ */
 static __device__ double sample_y_distr(curandStatePhilox4_32_10_t *rng_state, double theta_e);
 
+/**
+ * @brief Sample the cosine of the electron velocity direction.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param beta_e    Electron speed (v/c).
+ *
+ * @return Sampled mu = cos(theta) of electron velocity.
+ */
 static __device__ double sample_mu_distr(curandStatePhilox4_32_10_t *rng_state, double beta_e);
 
+/**
+ * @brief Sample the outgoing photon energy using the Klein-Nishina cross-section.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param k0        Incoming photon energy.
+ *
+ * @return Sampled scattered photon energy.
+ */
 static __device__ double sample_klein_nishina(curandStatePhilox4_32_10_t *rng_state, double k0);
 
+/**
+ * @brief Sample the outgoing photon direction using the Thomson cross-section.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ *
+ * @return Sampled cos(theta) for scattered photon direction.
+ */
 static __device__ double sample_thomson(curandStatePhilox4_32_10_t *rng_state);
 
+/**
+ * @brief Sample a random 3D unit vector uniformly on the sphere.
+ *
+ * @param rng_state Pointer to CUDA random number generator state.
+ * @param x         Output x-component of unit vector.
+ * @param y         Output y-component of unit vector.
+ * @param z         Output z-component of unit vector.
+ */
 static __device__ void sample_rand_dir(curandStatePhilox4_32_10_t *rng_state, double *x, double *y, double *z);
 
+/**
+ * @brief Compute Klein-Nishina differential cross-section.
+ *
+ * @param a  Incoming photon energy.
+ * @param ap Scattered photon energy.
+ *
+ * @return Klein-Nishina differential cross-section value.
+ */
 static __device__ double klein_nishina(double a, double ap);
 
 static __device__ void sample_electron_distr_p(curandStatePhilox4_32_10_t *rng_state,

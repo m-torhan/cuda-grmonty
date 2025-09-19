@@ -20,17 +20,41 @@ namespace hotcross {
 /**
  * @brief Computes the total angle-averaged Compton scattering cross-section.
  *
- * @param w Dimensionless photon energy (w = h * nu / (m_e * c^2)).
- * @param thetae Dimensionless electron temperature (thetae = k * T_e / (m_e * c^2)).
+ * @param w       Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ * @param theta_e Dimensionless electron temperature (theta_e = k * T_e / (m_e * c^2)).
  *
- * @return Total angle-averaged Compton scattering cross-section, in units of the Thomson cross-section (sigma_T).
+ * @return Total angle-averaged Compton scattering cross-section, normalized to the Thomson cross-section (σ_T).
  */
 static double total_compton_cross_num(double w, double theta_e);
 
+/**
+ * @brief Evaluate the Klein–Nishina differential cross-section kernel.
+ *
+ * @param w Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ *
+ * @return Klein–Nishina scattering factor, normalized to σ_T.
+ */
 static double hc_klein_nishina(double w);
 
+/**
+ * @brief Compute the differential electron distribution with respect to Lorentz factor γ_e.
+ *
+ * @param theta_e Dimensionless electron temperature (θ_e = k * T_e / (m_e * c^2)).
+ * @param gamma_e Electron Lorentz factor.
+ *
+ * @return Probability density dN/dγ_e for electrons at the given temperature.
+ */
 static double dnd_gamma_e(double theta_e, double gamma_e);
 
+/**
+ * @brief Compute boosted scattering cross-section contribution for given photon–electron kinematics.
+ *
+ * @param w       Dimensionless photon energy (w = h * nu / (m_e * c^2)).
+ * @param mu_e    Cosine of the electron pitch angle.
+ * @param gamma_e Electron Lorentz factor.
+ *
+ * @return Contribution to cross-section in boosted (electron rest-frame) scattering calculation.
+ */
 static double boostcross(double w, double mu_e, double gamma_e);
 
 void init_table(ndarray::NDArray<double, 2> &table) {
