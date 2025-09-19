@@ -16,6 +16,19 @@
 
 namespace cuda_hotcross {
 
+/**
+ * @brief Initializes a portion of the hot cross-section table on the device.
+ *
+ * Each thread computes a single table entry corresponding to photon energy and electron temperature grid indices.
+ *
+ * @param table   Pointer to device array storing the table.
+ * @param n       Number of photon energy bins.
+ * @param m       Number of electron temperature bins.
+ * @param l_min_w Logarithm of minimum photon energy.
+ * @param d_l_w   Logarithmic step size in photon energy.
+ * @param l_t     Logarithm of electron temperature for this entry.
+ * @param d_l_t   Logarithmic step size in electron temperature.
+ */
 static __global__ void
 init_table_entry(double *table, int n, int m, double l_min_w, double d_l_w, double l_t, double d_l_t);
 

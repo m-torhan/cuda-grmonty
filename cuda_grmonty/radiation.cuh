@@ -14,6 +14,18 @@
 
 namespace cuda_radiation {
 
+/**
+ * @brief Compute the angle between photon, fluid velocity, and magnetic field in the fluid frame.
+ *
+ * @param x      Photon position 4-vector.
+ * @param k      Photon momentum 4-vector.
+ * @param u_cov  Fluid 4-velocity covariant components.
+ * @param b_cov  Magnetic field 4-vector covariant components.
+ * @param b      Magnetic field strength.
+ * @param b_unit Unit vector along magnetic field direction.
+ *
+ * @return Angle between photon and magnetic field in the fluid frame.
+ */
 static __device__ double bk_angle(const double (&x)[consts::n_dim],
                                   const double (&k)[consts::n_dim],
                                   const double (&u_cov)[consts::n_dim],
@@ -21,20 +33,80 @@ static __device__ double bk_angle(const double (&x)[consts::n_dim],
                                   double b,
                                   double b_unit);
 
+/**
+ * @brief Compute the photon frequency in the local fluid frame.
+ *
+ * @param x     Photon position 4-vector.
+ * @param k     Photon momentum 4-vector.
+ * @param u_cov Fluid 4-velocity covariant components.
+ *
+ * @return Photon frequency in the fluid frame.
+ */
 static __device__ double
 fluid_nu(const double (&x)[consts::n_dim], const double (&k)[consts::n_dim], const double (&u_cov)[consts::n_dim]);
 
+/**
+ * @brief Compute inverse scattering opacity (alpha^{-1}) for given photon parameters.
+ *
+ * @param nu             Photon frequency.
+ * @param theta_e        Electron dimensionless temperature.
+ * @param n_e            Electron number density.
+ * @param hotcross_table Pointer to precomputed hotcross table on device memory.
+ *
+ * @return Inverse scattering opacity at specified parameters.
+ */
 static __device__ double
 alpha_inv_scatt(double nu, double theta_e, double n_e, const double *__restrict__ hotcross_table);
 
+/**
+ * @brief Compute inverse absorption opacity (alpha^{-1}) for given photon parameters.
+ *
+ * @param nu       Photon frequency.
+ * @param theta_e  Electron dimensionless temperature.
+ * @param n_e      Electron number density.
+ * @param b        Magnetic field strength.
+ * @param theta    Pitch angle between photon and magnetic field.
+ * @param k2_table Pointer to precomputed k2 table on device memory.
+ *
+ * @return Inverse absorption opacity at specified parameters.
+ */
 static __device__ double
 alpha_inv_abs(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table);
 
+/**
+ * @brief Compute inverse Planck function B_ν^{-1}.
+ *
+ * @param nu      Photon frequency.
+ * @param theta_e Electron dimensionless temperature.
+ *
+ * @return Inverse Planck function value at the given frequency and temperature.
+ */
 static __device__ double b_nu_inv(double nu, double theta_e);
 
+/**
+ * @brief Compute inverse synchrotron emissivity j_ν^{-1}.
+ *
+ * @param nu       Photon frequency.
+ * @param theta_e  Electron dimensionless temperature.
+ * @param n_e      Electron number density.
+ * @param b        Magnetic field strength.
+ * @param theta    Pitch angle between photon and magnetic field.
+ * @param k2_table Pointer to precomputed k2 table on device memory.
+ *
+ * @return Inverse synchrotron emissivity at specified parameters.
+ */
 static __device__ double
 jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table);
 
+/**
+ * @brief Compute electron scattering opacity (Thomson/Compton) using precomputed hotcross table.
+ *
+ * @param nu             Photon frequency.
+ * @param theta_e        Electron dimensionless temperature.
+ * @param hotcross_table Pointer to precomputed hotcross table on device memory.
+ *
+ * @return Scattering opacity at specified frequency and temperature.
+ */
 static __device__ double kappa_es(double nu, double theta_e, const double *__restrict__ hotcross_table);
 
 static __device__ double bk_angle(const double (&x)[consts::n_dim],

@@ -24,28 +24,99 @@
 
 namespace cuda_super_photon {
 
+/**
+ * @brief Maximum scattering optical depth per photon (device).
+ */
 __device__ double dev_max_tau_scatt;
+
+/**
+ * @brief Number of super-photons recorded (device).
+ */
 __device__ int dev_n_super_photon_recorded = 0.0;
+
+/**
+ * @brief Number of super-photons that scattered (device).
+ */
 __device__ int dev_n_super_photon_scatt = 0.0;
 
+/**
+ * @brief Device pointer to simulation header.
+ */
 static struct harm::Header *dev_header;
+
+/**
+ * @brief Device copy of simulation data (geometry, fluid, zones).
+ */
 static struct cuda_harm::Data dev_data;
+
+/**
+ * @brief Device pointer to units structure.
+ */
 static struct harm::Units *dev_units;
+
+/**
+ * @brief Device copy of precomputed tables for GPU calculations.
+ */
 static struct cuda_harm::Tables dev_tables;
+
+/**
+ * @brief Device pointer to photon spectrum accumulator.
+ */
 static struct harm::Spectrum *dev_spectrum;
 
+/**
+ * @enum PhotonState
+ * @brief Represents the state of a photon in the simulation.
+ */
 enum PhotonState : uint8_t {
-    Empty = 0,
-    New = 1,
-    Initialized = 2,
-    Tracked = 3,
+    Empty = 0,       /* Photon slot is empty. */
+    New = 1,         /* Newly created photon, not yet initialized. */
+    Initialized = 2, /* Photon initialized with position and momentum. */
+    Tracked = 3      /* Photon has been propagated/tracked. */
 };
 
+/**
+ * @brief Initialize CUDA random number generator states for super-photon propagation.
+ *
+ * Each thread initializes its own state for use in Monte Carlo sampling.
+ *
+ * @param rng_state Pointer to device array of random number generator states.
+ */
 static __global__ void init_rng(curandStatePhilox4_32_10_t *rng_state);
 
+/**
+ * @brief Load new photons and validate them.
+ *
+ * Checks if photons are in a valid state and prepares new photons for initialization.
+ *
+ * @param photon       Device array of existing photons.
+ * @param photon_new   Device array for newly created photons.
+ * @param photon_state Device array of photon states to track initialization and tracking.
+ */
 static __global__ void
 load_validate_photon(struct photon::Photon *photon, struct photon::Photon *photon_new, enum PhotonState *photon_state);
 
+/**
+ * @brief Setup per-photon propagation variables before starting photon tracking.
+ *
+ * Computes initial local fluid properties, photon frequency, absorption, and scattering opacities, as well as bias
+ * factors for weighted Monte Carlo propagation.
+ *
+ * @param header       Pointer to simulation header (grid, units, parameters).
+ * @param data         Device copy of simulation data (geometry, fluid, zones).
+ * @param units        Pointer to unit conversion structure.
+ * @param tables       Precomputed tables (hotcross, k2, f) on device memory.
+ * @param bias_norm    Bias normalization factor for photon weighting.
+ * @param photon       Device array of photons to initialize.
+ * @param photon_state Device array of photon states.
+ * @param n_step       Device array for photon step counters.
+ * @param fluid_n_e    Device array of local electron number densities.
+ * @param theta        Device array of local electron temperatures (theta_e).
+ * @param nu           Device array of photon frequencies in the fluid frame.
+ * @param alpha_scatti Device array of inverse scattering opacities.
+ * @param alpha_absi   Device array of inverse absorption opacities.
+ * @param bi           Device array of photon bias factors.
+ */
 static __global__ void setup_variables(const struct harm::Header *header,
                                        const cuda_harm::Data data,
                                        const harm::Units *units,
@@ -61,19 +132,78 @@ static __global__ void setup_variables(const struct harm::Header *header,
                                        double *alpha_absi,
                                        double *bi);
 
+/**
+ * @brief Apply stopping criterion to photons during propagation.
+ *
+ * Determines whether each photon should stop propagating based on optical depth, boundary conditions, or other
+ * termination criteria.
+ *
+ * @param rng_state    Device array of random number generator states for stochastic checks.
+ * @param header       Pointer to simulation header (grid, units, parameters).
+ * @param photon       Device array of photons to check.
+ * @param photon_state Device array of photon states, updated if photon should stop.
+ */
 static __global__ void stop_criterion(curandStatePhilox4_32_10_t *rng_state,
                                       const struct harm::Header *header,
                                       struct photon::Photon *photon,
                                       enum PhotonState *photon_state);
 
+/**
+ * @brief Compute the propagation step size for each photon.
+ *
+ * Determines the distance each photon should move in this iteration based on local fluid properties, optical depths,
+ * and geometry.
+ *
+ * @param header       Pointer to simulation header.
+ * @param photon       Device array of photons to compute step sizes for.
+ * @param photon_state Device array of photon states.
+ * @param step_size    Device array to store computed step sizes.
+ */
 static __global__ void step_size(const struct harm::Header *header,
                                  const struct photon::Photon *photon,
                                  enum PhotonState *photon_state,
                                  double *step_size);
 
+/**
+ * @brief Advance photons along their trajectories by the computed step size.
+ *
+ * Updates photon positions and optionally accumulates path lengths.
+ *
+ * @param header       Pointer to simulation header.
+ * @param photon       Device array of photons to propagate.
+ * @param photon_state Device array of photon states.
+ * @param dl           Device array to store path length increments for each photon.
+ * @param push_n       Device array to track number of steps pushed for each photon.
+ */
 static __global__ void push_photon(
     const harm::Header *header, struct photon::Photon *photon, enum PhotonState *photon_state, double *dl, int *push_n);
 
+/**
+ * @brief Compute photon interactions with the fluid, including absorption and scattering increments.
+ *
+ * This kernel calculates optical depth contributions (scattering and absorption) for each photon in the simulation.
+ * It updates local photon properties such as frequency in the fluid frame,  angle with the magnetic field, and photon
+ * weights using bias factors. Photons outside the fluid or with zero interaction rates are skipped.
+ *
+ * @param header        Pointer to simulation header.
+ * @param data          Device copy of simulation data (geometry, fluid, zones).
+ * @param units         Pointer to unit conversion structure.
+ * @param tables        Precomputed tables (hotcross, k2, f) on device memory.
+ * @param photon        Device array of photons to interact.
+ * @param photon_state  Device array of photon states.
+ * @param interact_cond Device array of boolean flags indicating which photons interact.
+ * @param step_size     Device array of photon step sizes.
+ * @param bias_norm     Bias normalization factor.
+ * @param fluid_n_e     Device array of local electron number densities.
+ * @param theta         Device array of local electron temperatures.
+ * @param nu            Device array of photon frequencies in the fluid frame.
+ * @param alpha_scatti  Device array of inverse scattering opacities.
+ * @param alpha_absi    Device array of inverse absorption opacities.
+ * @param bi            Device array of photon bias factors.
+ * @param d_tau_scatt   Device array of scattering optical depth increments.
+ * @param d_tau_abs     Device array of absorption optical depth increments.
+ * @param bias          Device array of updated photon biases after interaction.
+ */
 static __global__ void interact_photon(const harm::Header *header,
                                        const cuda_harm::Data data,
                                        const harm::Units *units,
@@ -93,6 +223,37 @@ static __global__ void interact_photon(const harm::Header *header,
                                        double *d_tau_abs,
                                        double *bias);
 
+/**
+ * @brief Process photon scattering events including secondary photon generation.
+ *
+ * This kernel performs Monte Carlo scattering using the photon weight and optical depth increments. Photons may be
+ * partially absorbed before scattering. Secondary photons are optionally created in `photon_2` for scattering events.
+ * Geodesic propagation and fluid parameters are updated for post-scatter photon states.
+ *
+ * @param rng_state     Device RNG states for Monte Carlo sampling.
+ * @param header        Simulation header.
+ * @param data          Device copy of simulation data.
+ * @param units         Pointer to unit conversion structure.
+ * @param tables        Precomputed tables (hotcross, k2, f).
+ * @param photon        Device array of photons to propagate.
+ * @param photon_state  Device array of photon states.
+ * @param interact_cond Flags indicating which photons should interact.
+ * @param scatter_cond  Flags indicating which photons scatter.
+ * @param photon_2      Device array for secondary photons generated by scattering.
+ * @param photon_p      Device array for temporary photon storage.
+ * @param fluid_params  Device array of fluid parameters at photon locations.
+ * @param g_cov         Device array for metric connection coefficients.
+ * @param step_size     Device array of photon step sizes.
+ * @param bias_norm     Photon weight bias normalization factor.
+ * @param theta         Device array of electron temperatures (theta_e).
+ * @param nu            Device array of photon frequencies in the fluid frame.
+ * @param alpha_scatti  Device array of inverse scattering opacities.
+ * @param alpha_absi    Device array of inverse absorption opacities.
+ * @param bi            Device array of photon bias factors.
+ * @param d_tau_scatt   Device array of scattering optical depth increments.
+ * @param d_tau_abs     Device array of absorption optical depth increments.
+ * @param bias          Device array of updated photon biases after interaction.
+ */
 static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
                                          const harm::Header *header,
                                          const cuda_harm::Data data,
@@ -117,6 +278,20 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
                                          double *d_tau_abs,
                                          double *bias);
 
+/**
+ * @brief Scatter a photon according to local fluid properties and electron distribution.
+ *
+ * Updates the photon's momentum and flags after scattering.
+ *
+ * @param rng_state    Device RNG states.
+ * @param units        Pointer to units conversion.
+ * @param photon       Device array of photons to scatter.
+ * @param photon_state Device array of photon states.
+ * @param scatter_cond Flags indicating which photons scatter.
+ * @param photon_p     Device array for temporary photon storage.
+ * @param fluid_params Fluid parameters at photon locations.
+ * @param g_cov        Metric connection coefficients for Lorentz transformations.
+ */
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_state,
                                             const harm::Units *units,
                                             struct photon::Photon *photon,
@@ -126,35 +301,107 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_stat
                                             struct harm::FluidParams *fluid_params,
                                             double *g_cov);
 
+/**
+ * @brief Increment photon step counters and check against max step number.
+ *
+ * @param n_step       Device array of photon step counters.
+ * @param photon_state Device array of photon states, updated if stopping conditions met.
+ */
 static __global__ void incr_check_n_step(int *n_step, enum PhotonState *photon_state);
 
+/**
+ * @brief Record photons into the spectrum accumulator.
+ *
+ * Adds contributions from propagated photons to the device spectrum arrays.
+ *
+ * @param header       Simulation header.
+ * @param photon       Device array of photons.
+ * @param photon_state Device array of photon states.
+ * @param n_step       Device array of photon step counts.
+ * @param spectrum     Device array to accumulate photon spectra.
+ */
 static __global__ void record_super_photon(const struct harm::Header *header,
                                            struct photon::Photon *photon,
                                            enum PhotonState *photon_state,
                                            int *n_step,
                                            struct harm::Spectrum *spectrum);
 
+/**
+ * @brief Device helper: advance a single photon along a step.
+ *
+ * @param header    Simulation header.
+ * @param photon    Photon to propagate.
+ * @param step_size Distance to propagate photon.
+ * @param n         Step index or count.
+ */
 static __device__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double step_size, int n);
 
+/**
+ * @brief Compute photon weight bias factor for Monte Carlo propagation.
+ *
+ * @param bias_norm Bias normalization factor.
+ * @param t_e       Local electron temperature (theta_e).
+ * @param w         Photon weight.
+ *
+ * @return Photon bias factor.
+ */
 static __device__ double bias_func(double bias_norm, double t_e, double w);
 
+/**
+ * @brief Initialize photon momentum derivative dkdlam at given position.
+ *
+ * @param header Simulation header.
+ * @param x      Photon position 4-vector.
+ * @param k_con  Photon canonical momentum 4-vector.
+ * @param d_k    Output derivative of momentum along geodesic.
+ */
 static __device__ void init_dkdlam(const harm::Header *header,
                                    const double (&x)[consts::n_dim],
                                    const double (&k_con)[consts::n_dim],
                                    double (&d_k)[consts::n_dim]);
 
+/**
+ * @brief Compute connection coefficients at a point for geodesic propagation.
+ *
+ * @param header Simulation header.
+ * @param x      Position 4-vector.
+ * @param lconn  Output 3D array of connection coefficients.
+ */
 static __device__ void get_connection(const harm::Header *header,
                                       const double (&x)[consts::n_dim],
                                       double (&lconn)[consts::n_dim][consts::n_dim][consts::n_dim]);
 
+/**
+ * @brief Sample a scattered photon momentum from the electron distribution.
+ *
+ * @param rng_state Device RNG states.
+ * @param k         Incoming photon momentum 4-vector.
+ * @param p         Electron momentum 4-vector.
+ * @param kp        Output scattered photon momentum 4-vector.
+ */
 static __device__ void sample_scattered_photon(curandStatePhilox4_32_10_t *rng_state,
                                                const double (&k)[consts::n_dim],
                                                double (&p)[consts::n_dim],
                                                double (&kp)[consts::n_dim]);
 
+/**
+ * @brief Perform a Lorentz boost of a 4-vector from one frame to another.
+ *
+ * @param v  Input 4-vector in original frame.
+ * @param u  Velocity 4-vector of target frame.
+ * @param vp Output boosted 4-vector.
+ */
 static __device__ void
 boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]);
 
+/**
+ * @brief Atomic maximum for double precision numbers in device memory.
+ *
+ * @param addr Pointer to memory address to perform atomic max.
+ * @param val  Value to compare and store if larger.
+ *
+ * @return Maximum value after atomic operation.
+ */
 static __device__ double atomic_max_double(double *addr, double val);
 
 void alloc_memory(const harm::Header &header,
@@ -1028,16 +1275,16 @@ static __global__ void record_super_photon(const struct harm::Header *header,
     const int idx = ix2 * consts::n_e_bins + i_e;
 
     /* TODO: optimize it using reduction */
-    atomicAdd(&spectrum[idx].dNdlE, photon[tid].w);
-    atomicAdd(&spectrum[idx].dEdlE, photon[tid].w * photon[tid].e);
+    atomicAdd(&spectrum[idx].dn_dle, photon[tid].w);
+    atomicAdd(&spectrum[idx].de_dle, photon[tid].w * photon[tid].e);
     atomicAdd(&spectrum[idx].tau_abs, photon[tid].w * photon[tid].tau_abs);
     atomicAdd(&spectrum[idx].tau_scatt, photon[tid].w * photon[tid].tau_scatt);
-    atomicAdd(&spectrum[idx].X1iav, photon[tid].w * photon[tid].x1i);
-    atomicAdd(&spectrum[idx].X2isq, photon[tid].w * (photon[tid].x2i * photon[tid].x2i));
-    atomicAdd(&spectrum[idx].X3fsq, photon[tid].w * (photon[tid].x[3] * photon[tid].x[3]));
-    atomicAdd(&spectrum[idx].ne0, photon[tid].w * (photon[tid].n_e_0));
-    atomicAdd(&spectrum[idx].b0, photon[tid].w * (photon[tid].b_0));
-    atomicAdd(&spectrum[idx].thetae0, photon[tid].w * (photon[tid].theta_e_0));
+    atomicAdd(&spectrum[idx].x1i_av, photon[tid].w * photon[tid].x1i);
+    atomicAdd(&spectrum[idx].x2i_sq, photon[tid].w * (photon[tid].x2i * photon[tid].x2i));
+    atomicAdd(&spectrum[idx].x3f_sq, photon[tid].w * (photon[tid].x[3] * photon[tid].x[3]));
+    atomicAdd(&spectrum[idx].ne_0, photon[tid].w * (photon[tid].n_e_0));
+    atomicAdd(&spectrum[idx].b_0, photon[tid].w * (photon[tid].b_0));
+    atomicAdd(&spectrum[idx].theta_e_0, photon[tid].w * (photon[tid].theta_e_0));
     atomicAdd(&spectrum[idx].nscatt, photon[tid].n_scatt);
     atomicAdd(&spectrum[idx].nph, 1.0);
 }
@@ -1277,7 +1524,7 @@ push_photon(const harm::Header *header, struct photon::Photon *photon, double dl
             k[i] = photon->k[i] + dl_2 * photon->dkdlam[i];
             err += fabs((k_cont[i] - k[i]) / (k[i] + consts::eps));
         }
-    } while (err > consts::etol && iter < consts::max_iter);
+    } while (err > consts::e_tol && iter < consts::max_iter);
 
 #pragma unroll
     for (int i = 0; i < consts::n_dim; ++i) {
@@ -1298,7 +1545,7 @@ push_photon(const harm::Header *header, struct photon::Photon *photon, double dl
 
     double err_e = fabs((e_1 - photon->e_0_s) / photon->e_0_s);
 
-    if (n < 7 && (err_e > 1.0e-4 || err > consts::etol || isnan(err) || isinf(err))) {
+    if (n < 7 && (err_e > 1.0e-4 || err > consts::e_tol || isnan(err) || isinf(err))) {
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
             photon->x[i] = x_cpy[i];

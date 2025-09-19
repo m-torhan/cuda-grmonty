@@ -37,8 +37,25 @@
 
 namespace harm {
 
+/**
+ * @brief Performs bilinear interpolation of a scalar field from a 2D array.
+ *
+ * @param var   2D scalar field array to interpolate from.
+ * @param i     Radial grid index.
+ * @param j     Polar grid index.
+ * @param coeff Interpolation coefficients for each dimension.
+ *
+ * @return Interpolated scalar value at the given location.
+ */
 static double interp_scalar(const ndarray::NDArray<double, 2> &var, int i, int j, const double (&coeff)[consts::n_dim]);
 
+/**
+ * @brief Applies a Lorentz boost to transform a 4-vector.
+ *
+ * @param[in] v   Input 4-vector in the lab frame.
+ * @param[in] u   4-velocity defining the boost (typically fluid frame).
+ * @param[out] vp Boosted 4-vector in the new frame.
+ */
 static void boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double (&vp)[consts::n_dim]);
 
 HARMModel::HARMModel(int photon_n, double mass_unit) : photon_n_(photon_n) {
@@ -398,19 +415,19 @@ void HARMModel::report_spectrum(std::string filepath) {
             double nu_lnu = (consts::me * consts::cl * consts::cl) * (4.0 * std::numbers::pi / d_omega) *
                             (1.0 / consts::spectrum::d_l_e);
 
-            nu_lnu *= spectrum_[j][i].dEdlE;
+            nu_lnu *= spectrum_[j][i].de_dle;
             nu_lnu /= consts::l_sun;
 
-            double tau_scatt = spectrum_[j][i].tau_scatt / (spectrum_[j][i].dNdlE + consts::eps);
+            double tau_scatt = spectrum_[j][i].tau_scatt / (spectrum_[j][i].dn_dle + consts::eps);
 
             spectrum_file << std::format("{:10.5g} ", nu_lnu);
-            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].tau_abs / (spectrum_[j][i].dNdlE + consts::eps));
+            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].tau_abs / (spectrum_[j][i].dn_dle + consts::eps));
             spectrum_file << std::format("{:10.5g} ", tau_scatt);
-            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].X1iav / (spectrum_[j][i].dNdlE + consts::eps));
+            spectrum_file << std::format("{:10.5g} ", spectrum_[j][i].x1i_av / (spectrum_[j][i].dn_dle + consts::eps));
             spectrum_file << std::format(
-                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].X2isq / (spectrum_[j][i].dNdlE + consts::eps))));
+                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].x2i_sq / (spectrum_[j][i].dn_dle + consts::eps))));
             spectrum_file << std::format(
-                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].X3fsq / (spectrum_[j][i].dNdlE + consts::eps))));
+                "{:10.5g} ", std::sqrt(std::abs(spectrum_[j][i].x3f_sq / (spectrum_[j][i].dn_dle + consts::eps))));
 
             if (tau_scatt > max_tau_scatt) {
                 max_tau_scatt = tau_scatt;
@@ -1174,7 +1191,7 @@ void HARMModel::push_photon(struct photon::Photon &photon, double dl, int n) {
             k[i] = photon.k[i] + dl_2 * photon.dkdlam[i];
             err += std::abs((k_cont[i] - k[i]) / (k[i] + consts::eps));
         }
-    } while (err > consts::etol && iter < consts::max_iter);
+    } while (err > consts::e_tol && iter < consts::max_iter);
 
     std::copy(std::begin(k), std::end(k), std::begin(photon.k));
 
@@ -1186,7 +1203,7 @@ void HARMModel::push_photon(struct photon::Photon &photon, double dl, int n) {
 
     double err_e = std::abs((e_1 - photon.e_0_s) / photon.e_0_s);
 
-    if (n < 7 && (err_e > 1.0e-4 || err > consts::etol || std::isnan(err) || std::isinf(err))) {
+    if (n < 7 && (err_e > 1.0e-4 || err > consts::e_tol || std::isnan(err) || std::isinf(err))) {
         std::copy(std::begin(x_cpy), std::end(x_cpy), std::begin(photon.x));
         std::copy(std::begin(k_cpy), std::end(k_cpy), std::begin(photon.k));
         std::copy(std::begin(dk_cpy), std::end(dk_cpy), std::begin(photon.dkdlam));
@@ -1230,16 +1247,16 @@ void HARMModel::record_super_photon(const struct photon::Photon &photon, int n_s
     n_super_photon_scatt_ += photon.n_scatt;
 
     /* sum in photon */
-    spectrum_[ix2][i_e].dNdlE += photon.w;
-    spectrum_[ix2][i_e].dEdlE += photon.w * photon.e;
+    spectrum_[ix2][i_e].dn_dle += photon.w;
+    spectrum_[ix2][i_e].de_dle += photon.w * photon.e;
     spectrum_[ix2][i_e].tau_abs += photon.w * photon.tau_abs;
     spectrum_[ix2][i_e].tau_scatt += photon.w * photon.tau_scatt;
-    spectrum_[ix2][i_e].X1iav += photon.w * photon.x1i;
-    spectrum_[ix2][i_e].X2isq += photon.w * (photon.x2i * photon.x2i);
-    spectrum_[ix2][i_e].X3fsq += photon.w * (photon.x[3] * photon.x[3]);
-    spectrum_[ix2][i_e].ne0 += photon.w * (photon.n_e_0);
-    spectrum_[ix2][i_e].b0 += photon.w * (photon.b_0);
-    spectrum_[ix2][i_e].thetae0 += photon.w * (photon.theta_e_0);
+    spectrum_[ix2][i_e].x1i_av += photon.w * photon.x1i;
+    spectrum_[ix2][i_e].x2i_sq += photon.w * (photon.x2i * photon.x2i);
+    spectrum_[ix2][i_e].x3f_sq += photon.w * (photon.x[3] * photon.x[3]);
+    spectrum_[ix2][i_e].ne_0 += photon.w * (photon.n_e_0);
+    spectrum_[ix2][i_e].b_0 += photon.w * (photon.b_0);
+    spectrum_[ix2][i_e].theta_e_0 += photon.w * (photon.theta_e_0);
     spectrum_[ix2][i_e].nscatt += photon.n_scatt;
     spectrum_[ix2][i_e].nph += 1.0;
 }

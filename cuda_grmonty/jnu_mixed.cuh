@@ -12,10 +12,38 @@
 
 namespace cuda_jnu_mixed {
 
+/**
+ * @brief Evaluate k2 for a given electron dimensionless temperature using device table.
+ *
+ * @param theta_e  Electron dimensionless temperature.
+ * @param k2_table Pointer to k2 table in device memory.
+ *
+ * @return Evaluated k2 value.
+ */
 static __device__ double k2_eval(double theta_e, const double *__restrict__ k2_table);
 
+/**
+ * @brief Linearly interpolate k2 from a device table for a given electron temperature.
+ *
+ * @param theta_e  Electron dimensionless temperature.
+ * @param k2_table Pointer to k2 table in device memory.
+ *
+ * @return Interpolated k2 value.
+ */
 static __device__ double linear_interp_k2(double theta_e, const double *__restrict__ k2_table);
 
+/**
+ * @brief Compute synchrotron emissivity for a photon at a given frequency and fluid parameters.
+ *
+ * @param nu       Photon frequency.
+ * @param n_e      Electron number density.
+ * @param theta_e  Electron dimensionless temperature.
+ * @param b        Magnetic field strength.
+ * @param theta    Pitch angle.
+ * @param k2_table Pointer to k2 table in device memory.
+ *
+ * @return Synchrotron emissivity at the given frequency.
+ */
 static __device__ double
 synch(double nu, double n_e, double theta_e, double b, double theta, const double *__restrict__ k2_table);
 

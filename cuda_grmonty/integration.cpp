@@ -17,7 +17,11 @@ namespace integration {
 
 /* clang-format off */
 
-/* Only nodes in [0, 1], because of symmetry */
+/**
+ * @brief Gauss-Kronrod nodes for 61-point integration.
+ *
+ * These are only the nodes in the interval [0, 1], leveraging symmetry to reduce the number of evaluations required.
+ */
 static constexpr double xgk[31] = {
   0.999484410050490637571325895705811,
   0.996893484074649540271630050918695,
@@ -52,6 +56,9 @@ static constexpr double xgk[31] = {
   0.000000000000000000000000000000000
 };
 
+/**
+ * @brief Gauss-Kronrod weights corresponding to xgk nodes.
+ */
 static constexpr double wgk[31] = {
   0.001389013698677007624551591226760,
   0.003890461127099884051267201844516,
@@ -86,7 +93,9 @@ static constexpr double wgk[31] = {
   0.051494729429451567558340433647099
 };
 
-/* 15 Gauss weights (subset of wgk) */
+/**
+ * @brief 15-point Gauss weights (subset of wgk) for faster integration when less precision is sufficient.
+ */
 static constexpr double wg[15] = {
   0.007968192496166605615465883474674,
   0.018466468311090959142302131912047,
@@ -107,8 +116,23 @@ static constexpr double wg[15] = {
 
 /* clang-format on */
 
+/**
+ * @brief Compute 61-point Gauss-Kronrod quadrature over [a, b] for a given function.
+ *
+ * @param f Function to integrate.
+ * @param a Lower limit of integration.
+ * @param b Upper limit of integration.
+ *
+ * @return Tuple containing (integral result, estimated error).
+ */
 static std::tuple<double, double> qk61(const std::function<double(double)> &f, double a, double b);
 
+/**
+ * @brief Represents an integration interval with result and error estimate.
+ *
+ * Useful for adaptive quadrature routines. The comparison operator is defined to create a max-heap based on the
+ * largest error, allowing the algorithm to subdivide the interval with the largest estimated error first.
+ */
 struct Interval {
     double a, b;
     double result;

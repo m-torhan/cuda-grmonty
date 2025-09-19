@@ -16,8 +16,28 @@
 
 namespace radiation {
 
+/**
+ * @brief Compute the inverse Planck function B_ν^{-1}.
+ *
+ * @param nu      Photon frequency.
+ * @param theta_e Electron dimensionless temperature.
+ *
+ * @return Inverse of the Planck function at the given frequency and temperature.
+ */
 static double b_nu_inv(double nu, double theta_e);
 
+/**
+ * @brief Compute the inverse synchrotron emissivity j_ν^{-1}.
+ *
+ * @param nu       Photon frequency.
+ * @param theta_e  Electron dimensionless temperature.
+ * @param n_e      Electron number density.
+ * @param b        Magnetic field strength.
+ * @param theta    Pitch angle between photon and magnetic field.
+ * @param k2_table Table of k2(theta_e) values for interpolation.
+ *
+ * @return Inverse synchrotron emissivity at the specified parameters.
+ */
 static double jnu_inv(double nu,
                       double theta_e,
                       double n_e,
@@ -25,6 +45,15 @@ static double jnu_inv(double nu,
                       double theta,
                       const std::array<double, consts::n_e_samp + 1> &k2_table);
 
+/**
+ * @brief Compute electron scattering opacity (Thomson/Compton) using precomputed hotcross table.
+ *
+ * @param nu             Photon frequency.
+ * @param theta_e        Electron dimensionless temperature.
+ * @param hotcross_table Precomputed table of total Compton cross-sections.
+ *
+ * @return Scattering opacity (kappa_es) at the specified frequency and temperature.
+ */
 static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table);
 
 double bk_angle(const double (&x)[consts::n_dim],
