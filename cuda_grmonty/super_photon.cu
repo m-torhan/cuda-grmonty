@@ -372,15 +372,39 @@ static __device__ void init_dkdlam(const harm::Header *header,
                                    double (&d_k)[consts::n_dim]);
 
 /**
+ * @brief Length of flattened connection coeffictients.
+ */
+constexpr int lconn_flat_len = 40;
+
+/**
+ * @brief Computes index of flattened connection coefficient from 3D index.
+ *
+ * @param i First dimension index.
+ * @param j Second dimension index.
+ * @param k Third dimension index.
+ *
+ * @returns Flattened index.
+ */
+static constexpr int lconn_flat_idx(int i, int j, int k) {
+    const int map[consts::n_dim][consts::n_dim] = {
+        {0, 1, 2, 3},
+        {1, 4, 5, 6},
+        {2, 5, 7, 8},
+        {3, 6, 8, 9},
+    };
+
+    return 10 * i + map[j][k];
+}
+
+/**
  * @brief Compute connection coefficients at a point for geodesic propagation.
  *
  * @param header Simulation header.
  * @param x      Position 4-vector.
  * @param lconn  Output 3D array of connection coefficients.
  */
-static __device__ void get_connection(const harm::Header *header,
-                                      const double (&x)[consts::n_dim],
-                                      double (&lconn)[consts::n_dim][consts::n_dim][consts::n_dim]);
+static __device__ void
+get_connection(const harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]);
 
 /**
  * @brief Sample a scattered photon momentum from the electron distribution.
@@ -518,10 +542,6 @@ void track_super_photons(double bias_norm,
     struct photon::Photon *dev_photon_p;
     struct harm::FluidParams *dev_fluid_params;
     double *dev_g_cov;
-
-    /* TODO: reduce stack usage */
-    size_t stackSize = 16 * 1024; /* 16 KB per thread */
-    cudaDeviceSetLimit(cudaLimitStackSize, stackSize);
 
     gpuErrchk(cudaMemcpyToSymbol(dev_max_tau_scatt, &max_tau_scatt, sizeof(double)));
 
@@ -1005,7 +1025,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
                                          double *bias) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    __shared__ double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     scatter_cond[tid] = false;
 
@@ -1309,26 +1329,27 @@ static __device__ void init_dkdlam(const harm::Header *header,
                                    const double (&x)[consts::n_dim],
                                    const double (&k_con)[consts::n_dim],
                                    double (&d_k)[consts::n_dim]) {
-    /* TODO: reduce its size as not all elements are used */
-    double lconn[consts::n_dim][consts::n_dim][consts::n_dim];
+    double lconn[lconn_flat_len];
 
     get_connection(header, x, lconn);
 
 #pragma unroll
     for (int i = 0; i < consts::n_dim; ++i) {
         d_k[i] =
-            -2.0 *
-            (k_con[0] * (lconn[i][0][1] * k_con[1] + lconn[i][0][2] * k_con[2] + lconn[i][0][3] * k_con[3]) +
-             k_con[1] * (lconn[i][1][2] * k_con[2] + lconn[i][1][3] * k_con[3]) + lconn[i][2][3] * k_con[2] * k_con[3]);
+            -2.0 * (k_con[0] * (lconn[lconn_flat_idx(i, 0, 1)] * k_con[1] + lconn[lconn_flat_idx(i, 0, 2)] * k_con[2] +
+                                lconn[lconn_flat_idx(i, 0, 3)] * k_con[3]) +
+                    k_con[1] * (lconn[lconn_flat_idx(i, 1, 2)] * k_con[2] + lconn[lconn_flat_idx(i, 1, 3)] * k_con[3]) +
+                    lconn[lconn_flat_idx(i, 2, 3)] * k_con[2] * k_con[3]);
 
-        d_k[i] -= (lconn[i][0][0] * k_con[0] * k_con[0] + lconn[i][1][1] * k_con[1] * k_con[1] +
-                   lconn[i][2][2] * k_con[2] * k_con[2] + lconn[i][3][3] * k_con[3] * k_con[3]);
+        d_k[i] -= (lconn[lconn_flat_idx(i, 0, 0)] * k_con[0] * k_con[0] +
+                   lconn[lconn_flat_idx(i, 1, 1)] * k_con[1] * k_con[1] +
+                   lconn[lconn_flat_idx(i, 2, 2)] * k_con[2] * k_con[2] +
+                   lconn[lconn_flat_idx(i, 3, 3)] * k_con[3] * k_con[3]);
     }
 }
 
-static __device__ void get_connection(const harm::Header *header,
-                                      const double (&x)[consts::n_dim],
-                                      double (&lconn)[consts::n_dim][consts::n_dim][consts::n_dim]) {
+static __device__ void
+get_connection(const harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]) {
     double r1 = exp(x[1]);
     double r2 = r1 * r1;
     double r3 = r2 * r1;
@@ -1374,92 +1395,94 @@ static __device__ void get_connection(const harm::Header *header,
     double fac2 = a2 + 2.0 * r2 + a2 * c2th;
     double fac3 = a2 + r1 * (-2.0 + r1);
 
-    lconn[0][0][0] = 2.0 * r1 * fac1_rho23;
-    lconn[0][0][1] = r1 * (2.0 * r1 + rho2) * fac1_rho23;
-    lconn[0][0][2] = -a2 * r1 * s2th * dthdx2 * irho22;
-    lconn[0][0][3] = -2.0 * a * r1sth2 * fac1_rho23;
+    lconn[lconn_flat_idx(0, 0, 0)] = 2.0 * r1 * fac1_rho23;
+    lconn[lconn_flat_idx(0, 0, 1)] = r1 * (2.0 * r1 + rho2) * fac1_rho23;
+    lconn[lconn_flat_idx(0, 0, 2)] = -a2 * r1 * s2th * dthdx2 * irho22;
+    lconn[lconn_flat_idx(0, 0, 3)] = -2.0 * a * r1sth2 * fac1_rho23;
 
     /* lconn[0][1][0] = lconn[0][0][1]; */
-    lconn[0][1][1] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
-    lconn[0][1][2] = -a2 * r2 * s2th * dthdx2 * irho22;
-    lconn[0][1][3] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
+    lconn[lconn_flat_idx(0, 1, 1)] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
+    lconn[lconn_flat_idx(0, 1, 2)] = -a2 * r2 * s2th * dthdx2 * irho22;
+    lconn[lconn_flat_idx(0, 1, 3)] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
 
     /* lconn[0][2][0] = lconn[0][0][2]; */
     /* lconn[0][2][1] = lconn[0][1][2]; */
-    lconn[0][2][2] = -2.0 * r2 * dthdx22 * irho2;
-    lconn[0][2][3] = a3 * r1sth2 * s2th * dthdx2 * irho22;
+    lconn[lconn_flat_idx(0, 2, 2)] = -2.0 * r2 * dthdx22 * irho2;
+    lconn[lconn_flat_idx(0, 2, 3)] = a3 * r1sth2 * s2th * dthdx2 * irho22;
 
     /* lconn[0][3][0] = lconn[0][0][3]; */
     /* lconn[0][3][1] = lconn[0][1][3]; */
     /* lconn[0][3][2] = lconn[0][2][3]; */
-    lconn[0][3][3] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
+    lconn[lconn_flat_idx(0, 3, 3)] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
 
-    lconn[1][0][0] = fac3 * fac1 / (r1 * rho23);
-    lconn[1][0][1] = fac1 * (-2.0 * r1 + a2sth2) * irho23;
-    lconn[1][0][2] = 0.0;
-    lconn[1][0][3] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
+    lconn[lconn_flat_idx(1, 0, 0)] = fac3 * fac1 / (r1 * rho23);
+    lconn[lconn_flat_idx(1, 0, 1)] = fac1 * (-2.0 * r1 + a2sth2) * irho23;
+    lconn[lconn_flat_idx(1, 0, 2)] = 0.0;
+    lconn[lconn_flat_idx(1, 0, 3)] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
 
     /* lconn[1][1][0] = lconn[1][0][1]; */
-    lconn[1][1][1] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 +
-                                                            r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
-                     irho23;
-    lconn[1][1][2] = -a2 * dthdx2 * s2th / fac2;
-    lconn[1][1][3] = a * sth2 *
-                     (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
-                     irho23;
+    lconn[lconn_flat_idx(1, 1, 1)] =
+        (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 + r3 * sth2 +
+                                               r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
+        irho23;
+    lconn[lconn_flat_idx(1, 1, 2)] = -a2 * dthdx2 * s2th / fac2;
+    lconn[lconn_flat_idx(1, 1, 3)] =
+        a * sth2 * (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
+        irho23;
 
     /* lconn[1][2][0] = lconn[1][0][2]; */
     /* lconn[1][2][1] = lconn[1][1][2]; */
-    lconn[1][2][2] = -fac3 * dthdx22 * irho2;
-    lconn[1][2][3] = 0.0;
+    lconn[lconn_flat_idx(1, 2, 2)] = -fac3 * dthdx22 * irho2;
+    lconn[lconn_flat_idx(1, 2, 3)] = 0.0;
 
     /* lconn[1][3][0] = lconn[1][0][3]; */
     /* lconn[1][3][1] = lconn[1][1][3]; */
     /* lconn[1][3][2] = lconn[1][2][3]; */
-    lconn[1][3][3] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
+    lconn[lconn_flat_idx(1, 3, 3)] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
 
-    lconn[2][0][0] = -a2 * r1 * s2th * irho23_dthdx2;
-    lconn[2][0][1] = r1 * lconn[2][0][0];
-    lconn[2][0][2] = 0.0;
-    lconn[2][0][3] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
+    lconn[lconn_flat_idx(2, 0, 0)] = -a2 * r1 * s2th * irho23_dthdx2;
+    lconn[lconn_flat_idx(2, 0, 1)] = r1 * lconn[lconn_flat_idx(2, 0, 0)];
+    lconn[lconn_flat_idx(2, 0, 2)] = 0.0;
+    lconn[lconn_flat_idx(2, 0, 3)] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
 
     /* lconn[2][1][0] = lconn[2][0][1]; */
-    lconn[2][1][1] = r2 * lconn[2][0][0];
-    lconn[2][1][2] = r2 * irho2;
-    lconn[2][1][3] =
+    lconn[lconn_flat_idx(2, 1, 1)] = r2 * lconn[lconn_flat_idx(2, 0, 0)];
+    lconn[lconn_flat_idx(2, 1, 2)] = r2 * irho2;
+    lconn[lconn_flat_idx(2, 1, 3)] =
         (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1sth2))) *
         irho23_dthdx2;
 
     /* lconn[2][2][0] = lconn[2][0][2]; */
     /* lconn[2][2][1] = lconn[2][1][2]; */
-    lconn[2][2][2] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
-    lconn[2][2][3] = 0.0;
+    lconn[lconn_flat_idx(2, 2, 2)] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
+    lconn[lconn_flat_idx(2, 2, 3)] = 0.0;
 
     /* lconn[2][3][0] = lconn[2][0][3]; */
     /* lconn[2][3][1] = lconn[2][1][3]; */
     /* lconn[2][3][2] = lconn[2][2][3]; */
-    lconn[2][3][3] =
+    lconn[lconn_flat_idx(2, 3, 3)] =
         -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
 
-    lconn[3][0][0] = a * fac1_rho23;
-    lconn[3][0][1] = r1 * lconn[3][0][0];
-    lconn[3][0][2] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
-    lconn[3][0][3] = -a2sth2 * fac1_rho23;
+    lconn[lconn_flat_idx(3, 0, 0)] = a * fac1_rho23;
+    lconn[lconn_flat_idx(3, 0, 1)] = r1 * lconn[lconn_flat_idx(3, 0, 0)];
+    lconn[lconn_flat_idx(3, 0, 2)] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
+    lconn[lconn_flat_idx(3, 0, 3)] = -a2sth2 * fac1_rho23;
 
     /* lconn[3][1][0] = lconn[3][0][1]; */
-    lconn[3][1][1] = a * r2 * fac1_rho23;
-    lconn[3][1][2] = -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
-    lconn[3][1][3] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
+    lconn[lconn_flat_idx(3, 1, 1)] = a * r2 * fac1_rho23;
+    lconn[lconn_flat_idx(3, 1, 2)] =
+        -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
+    lconn[lconn_flat_idx(3, 1, 3)] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
 
     /* lconn[3][2][0] = lconn[3][0][2]; */
     /* lconn[3][2][1] = lconn[3][1][2]; */
-    lconn[3][2][2] = -a * r1 * dthdx22 * irho2;
-    lconn[3][2][3] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
+    lconn[lconn_flat_idx(3, 2, 2)] = -a * r1 * dthdx22 * irho2;
+    lconn[lconn_flat_idx(3, 2, 3)] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
 
     /* lconn[3][3][0] = lconn[3][0][3]; */
     /* lconn[3][3][1] = lconn[3][1][3]; */
     /* lconn[3][3][2] = lconn[3][2][3]; */
-    lconn[3][3][3] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
+    lconn[lconn_flat_idx(3, 3, 3)] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
 }
 
 static __device__ __noinline__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double dl) {
@@ -1467,15 +1490,15 @@ static __device__ __noinline__ void push_photon(const harm::Header *header, stru
         return;
     }
 
-    double dl_stack[7] = {dl};
-    int depth_stack[7] = {0};
-    int n = 1;
+    double dl_stack[8] = {dl};
+    int depth_stack[8] = {0};
+    int n = 0;
 
     double x_cpy[consts::n_dim];
     double k_cpy[consts::n_dim];
     double dk_cpy[consts::n_dim];
 
-    while (n > 0) {
+    while (n >= 0) {
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
             x_cpy[i] = photon->x[i];
@@ -1492,11 +1515,10 @@ static __device__ __noinline__ void push_photon(const harm::Header *header, stru
                 photon->k[i] = k_cpy[i];
                 photon->dkdlam[i] = dk_cpy[i];
             }
-            dl_stack[n] = dl_stack[n] / 2;
+            dl_stack[n] = dl_stack[n] / 2.0;
             dl_stack[n + 1] = dl_stack[n];
             depth_stack[n] = depth_stack[n] + 1;
             depth_stack[n + 1] = depth_stack[n];
-            ++n;
         } else {
             photon->e_0_s = e_1;
             --n;
@@ -1517,9 +1539,9 @@ push_photon_step(const harm::Header *header, struct photon::Photon *photon, doub
         photon->x[i] += photon->k[i] * dl;
     }
 
-    __shared__ double lconn[consts::cuda::block_dim][consts::n_dim][consts::n_dim][consts::n_dim];
+    double lconn[lconn_flat_len];
 
-    get_connection(header, photon->x, lconn[threadIdx.x]);
+    get_connection(header, photon->x, lconn);
 
     double err;
     int iter = 0;
@@ -1540,14 +1562,14 @@ push_photon_step(const harm::Header *header, struct photon::Photon *photon, doub
         for (int i = 0; i < consts::n_dim; ++i) {
             photon->dkdlam[i] =
                 -2.0 *
-                (k_cont[0] * (lconn[threadIdx.x][i][0][1] * k_cont[1] + lconn[threadIdx.x][i][0][2] * k_cont[2] +
-                              lconn[threadIdx.x][i][0][3] * k_cont[3]) +
-                 k_cont[1] * (lconn[threadIdx.x][i][1][2] * k_cont[2] + lconn[threadIdx.x][i][1][3] * k_cont[3]) +
-                 lconn[threadIdx.x][i][2][3] * k_cont[2] * k_cont[3]);
-            photon->dkdlam[i] -= (lconn[threadIdx.x][i][0][0] * k_cont[0] * k_cont[0] +
-                                  lconn[threadIdx.x][i][1][1] * k_cont[1] * k_cont[1] +
-                                  lconn[threadIdx.x][i][2][2] * k_cont[2] * k_cont[2] +
-                                  lconn[threadIdx.x][i][3][3] * k_cont[3] * k_cont[3]);
+                (k_cont[0] * (lconn[lconn_flat_idx(i, 0, 1)] * k_cont[1] + lconn[lconn_flat_idx(i, 0, 2)] * k_cont[2] +
+                              lconn[lconn_flat_idx(i, 0, 3)] * k_cont[3]) +
+                 k_cont[1] * (lconn[lconn_flat_idx(i, 1, 2)] * k_cont[2] + lconn[lconn_flat_idx(i, 1, 3)] * k_cont[3]) +
+                 lconn[lconn_flat_idx(i, 2, 3)] * k_cont[2] * k_cont[3]);
+            photon->dkdlam[i] -= (lconn[lconn_flat_idx(i, 0, 0)] * k_cont[0] * k_cont[0] +
+                                  lconn[lconn_flat_idx(i, 1, 1)] * k_cont[1] * k_cont[1] +
+                                  lconn[lconn_flat_idx(i, 2, 2)] * k_cont[2] * k_cont[2] +
+                                  lconn[lconn_flat_idx(i, 3, 3)] * k_cont[3] * k_cont[3]);
 
             k[i] = photon->k[i] + dl_2 * photon->dkdlam[i];
             err += fabs((k_cont[i] - k[i]) / (k[i] + consts::eps));
