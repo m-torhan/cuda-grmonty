@@ -30,6 +30,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if not args.spectrum_path.exists():
+        print(f"File {args.spectrum_path} does not exist")
+        exit(1)
+
+    if not args.plot_path.parent.exists():
+        print(f"Parent directory of {args.plot_path} does not exist")
+        exit(1)
+
     s = nmmn.sed.SED()
     s.grmonty(str(args.spectrum_path.resolve()))
 
