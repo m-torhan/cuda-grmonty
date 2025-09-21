@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <semaphore>
+#include <tuple>
 
 #include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/harm_data.cuh"
@@ -173,10 +174,9 @@ static __global__ void step_size(const struct harm::Header *header,
  * @param photon       Device array of photons to propagate.
  * @param photon_state Device array of photon states.
  * @param dl           Device array to store path length increments for each photon.
- * @param push_n       Device array to track number of steps pushed for each photon.
  */
-static __global__ void push_photon(
-    const harm::Header *header, struct photon::Photon *photon, enum PhotonState *photon_state, double *dl, int *push_n);
+static __global__ void
+push_photon(const harm::Header *header, struct photon::Photon *photon, enum PhotonState *photon_state, double *dl);
 
 /**
  * @brief Compute photon interactions with the fluid, including absorption and scattering increments.
@@ -332,9 +332,20 @@ static __global__ void record_super_photon(const struct harm::Header *header,
  * @param header    Simulation header.
  * @param photon    Photon to propagate.
  * @param step_size Distance to propagate photon.
- * @param n         Step index or count.
  */
-static __device__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double step_size, int n);
+static __device__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double step_size);
+
+/**
+ * @brief Device helper: advance a single photon along a step.
+ *
+ * @param header    Simulation header.
+ * @param photon    Photon to propagate.
+ * @param step_size Distance to propagate photon.
+ *
+ * @return Energy and estimated errors.
+ */
+static __device__ std::tuple<double, double, double>
+push_photon_step(const harm::Header *header, struct photon::Photon *photon, double step_size);
 
 /**
  * @brief Compute photon weight bias factor for Monte Carlo propagation.
@@ -496,8 +507,6 @@ void track_super_photons(double bias_norm,
 
     double *dev_step_size;
 
-    int *dev_push_n;
-
     bool *dev_interact_cond;
     bool *scatter_cond = new bool[n];
     bool *dev_scatter_cond;
@@ -533,7 +542,6 @@ void track_super_photons(double bias_norm,
     gpuErrchk(cudaMalloc((void **)&dev_bi, n * sizeof(double)));
 
     gpuErrchk(cudaMalloc((void **)&dev_step_size, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_push_n, n * sizeof(int)));
 
     gpuErrchk(cudaMalloc((void **)&dev_interact_cond, n * sizeof(bool)));
     gpuErrchk(cudaMalloc((void **)&dev_scatter_cond, n * sizeof(bool)));
@@ -613,8 +621,7 @@ void track_super_photons(double bias_norm,
         step_size<<<grid_dim, block_dim>>>(dev_header, dev_photon, dev_photon_state, dev_step_size);
         gpuErrchk(cudaDeviceSynchronize());
 
-        gpuErrchk(cudaMemset(dev_push_n, 0, n * sizeof(int)));
-        push_photon<<<grid_dim, block_dim>>>(dev_header, dev_photon, dev_photon_state, dev_step_size, dev_push_n);
+        push_photon<<<grid_dim, block_dim>>>(dev_header, dev_photon, dev_photon_state, dev_step_size);
         gpuErrchk(cudaDeviceSynchronize());
 
         /* check stop criterion */
@@ -721,7 +728,6 @@ void track_super_photons(double bias_norm,
     gpuErrchk(cudaFree(dev_bi));
 
     gpuErrchk(cudaFree(dev_step_size));
-    gpuErrchk(cudaFree(dev_push_n));
 
     gpuErrchk(cudaFree(dev_interact_cond));
     delete[] scatter_cond;
@@ -883,15 +889,14 @@ static __global__ void step_size(const struct harm::Header *header,
 static __global__ void push_photon(const harm::Header *header,
                                    struct photon::Photon *photon,
                                    enum PhotonState *photon_state,
-                                   double *step_size,
-                                   int *push_n) {
+                                   double *step_size) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (photon_state[tid] != PhotonState::Initialized) {
         return;
     }
 
-    push_photon(header, &photon[tid], step_size[tid], push_n[tid]);
+    push_photon(header, &photon[tid], step_size[tid]);
 }
 
 static __global__ void interact_photon(const harm::Header *header,
@@ -1034,7 +1039,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
             photon[tid].w *= exp(-d_tau);
         }
 
-        push_photon(header, &photon_2[tid], step_size[tid] * frac, 0);
+        push_photon(header, &photon_2[tid], step_size[tid] * frac);
 
 #pragma unroll
         for (int j = 0; j < consts::n_dim; ++j) {
@@ -1216,10 +1221,6 @@ static __global__ void incr_check_n_step(int *n_step, enum PhotonState *photon_s
         return;
     }
     ++n_step[tid];
-
-    if (n_step[tid] > 10000) {
-        printf("%d", n_step[tid]);
-    }
 
     if (n_step[tid] > consts::max_n_step) {
         photon_state[tid] = PhotonState::Empty;
@@ -1461,23 +1462,50 @@ static __device__ void get_connection(const harm::Header *header,
     lconn[3][3][3] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
 }
 
-static __device__ __noinline__ void
-push_photon(const harm::Header *header, struct photon::Photon *photon, double dl, int n) {
+static __device__ __noinline__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double dl) {
     if (photon->x[1] < header->x_start[1]) {
         return;
     }
+
+    double dl_stack[7] = {dl};
+    int depth_stack[7] = {0};
+    int n = 1;
 
     double x_cpy[consts::n_dim];
     double k_cpy[consts::n_dim];
     double dk_cpy[consts::n_dim];
 
+    while (n > 0) {
 #pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        x_cpy[i] = photon->x[i];
-        k_cpy[i] = photon->k[i];
-        dk_cpy[i] = photon->dkdlam[i];
-    }
+        for (int i = 0; i < consts::n_dim; ++i) {
+            x_cpy[i] = photon->x[i];
+            k_cpy[i] = photon->k[i];
+            dk_cpy[i] = photon->dkdlam[i];
+        }
 
+        auto [e_1, err, err_e] = push_photon_step(header, photon, dl_stack[n]);
+
+        if (depth_stack[n] < 7 && (err_e > 1.0e-4 || err > consts::e_tol || isnan(err) || isinf(err))) {
+#pragma unroll
+            for (int i = 0; i < consts::n_dim; ++i) {
+                photon->x[i] = x_cpy[i];
+                photon->k[i] = k_cpy[i];
+                photon->dkdlam[i] = dk_cpy[i];
+            }
+            dl_stack[n] = dl_stack[n] / 2;
+            dl_stack[n + 1] = dl_stack[n];
+            depth_stack[n] = depth_stack[n] + 1;
+            depth_stack[n + 1] = depth_stack[n];
+            ++n;
+        } else {
+            photon->e_0_s = e_1;
+            --n;
+        }
+    }
+}
+
+static __device__ __noinline__ std::tuple<double, double, double>
+push_photon_step(const harm::Header *header, struct photon::Photon *photon, double dl) {
     double dl_2 = 0.5 * dl;
     double k[consts::n_dim];
 
@@ -1545,20 +1573,7 @@ push_photon(const harm::Header *header, struct photon::Photon *photon, double dl
 
     double err_e = fabs((e_1 - photon->e_0_s) / photon->e_0_s);
 
-    if (n < 7 && (err_e > 1.0e-4 || err > consts::e_tol || isnan(err) || isinf(err))) {
-#pragma unroll
-        for (int i = 0; i < consts::n_dim; ++i) {
-            photon->x[i] = x_cpy[i];
-            photon->k[i] = k_cpy[i];
-            photon->dkdlam[i] = dk_cpy[i];
-        }
-        /* TODO: avoid recursion */
-        push_photon(header, photon, 0.5 * dl, n + 1);
-        push_photon(header, photon, 0.5 * dl, n + 1);
-        e_1 = photon->e_0_s;
-    }
-
-    photon->e_0_s = e_1;
+    return {e_1, err, err_e};
 }
 
 static __device__ void sample_scattered_photon(curandStatePhilox4_32_10_t *rng_state,
