@@ -82,6 +82,7 @@ Hardware:
 | [grmonty](https://github.com/pseudotensor/grmonty)                                | `OMP_NUM_THREADS=32` | 289866              | 55.36                |
 | [v0.0.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.0.1) (CPU-only) |                      | 51429               | 317.02               |
 | [v0.1.0](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.0)            |                      | 65119               | 241.84               |
+| [v0.1.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.1)            |                      | 137939              | 114.95               |
 
 ## Development
 
