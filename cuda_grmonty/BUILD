@@ -38,6 +38,17 @@ cc_library(
     ],
 )
 
+cuda_library(
+    name = "cuda_photon",
+    srcs = ["photon.cu"],
+    hdrs = ["photon.cuh"],
+    deps = [
+        ":consts",
+        ":cuda_utils",
+    ],
+    target_compatible_with = requires_cuda(),
+)
+
 cc_library(
     name = "photon_queue",
     srcs = ["photon_queue.cpp"],
@@ -239,6 +250,7 @@ cuda_library(
     deps = [
         ":cuda_harm_data",
         ":cuda_harm_model",
+        ":cuda_photon",
         ":cuda_proba",
         ":cuda_radiation",
         ":cuda_utils",
