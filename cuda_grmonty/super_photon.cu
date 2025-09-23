@@ -34,12 +34,12 @@ __device__ double dev_max_tau_scatt;
 /**
  * @brief Number of super-photons recorded (device).
  */
-__device__ int dev_n_super_photon_recorded = 0.0;
+__device__ int dev_n_super_photon_recorded = 0;
 
 /**
  * @brief Number of super-photons that scattered (device).
  */
-__device__ int dev_n_super_photon_scatt = 0.0;
+__device__ int dev_n_super_photon_scatt = 0;
 
 /**
  * @brief Device pointer to simulation header.
@@ -1511,16 +1511,18 @@ get_connection(const harm::Header *header, const double (&x)[consts::n_dim], dou
     const double r3 = r2 * r1;
     const double r4 = r3 * r1;
 
-    const double s_x = sin(2.0 * CUDART_PI * x[2]);
-    const double c_x = cos(2.0 * CUDART_PI * x[2]);
+    double s_x;
+    double c_x;
+    sincos(2.0 * CUDART_PI * x[2], &s_x, &c_x);
 
     const double th = CUDART_PI * x[2] + 0.5 * (1.0 - header->h_slope) * s_x;
     const double dthdx2 = CUDART_PI * (1.0 + (1.0 - header->h_slope) * c_x);
     const double d2thdx22 = -2.0 * CUDART_PI * CUDART_PI * (1.0 - header->h_slope) * s_x;
     const double dthdx22 = dthdx2 * dthdx2;
 
-    const double sth = sin(th);
-    const double cth = cos(th);
+    double sth;
+    double cth;
+    sincos(th, &sth, &cth);
 
     const double sth2 = sth * sth;
     const double r1sth2 = r1 * sth2;
@@ -1664,7 +1666,7 @@ static __device__ void push_photon(const harm::Header *header, struct photon::Ph
 
         auto [e_1, err, err_e] = push_photon_step(header, photon, dl_stack[n]);
 
-        if (depth_stack[n] < 7 && (err_e > 1.0e-4 || err > consts::e_tol || isnan(err) || isinf(err))) {
+        if (depth_stack[n] < 7 && (err_e > 1.0e-4 || err > consts::e_tol || !isfinite(err))) {
 #pragma unroll
             for (int i = 0; i < consts::n_dim; ++i) {
                 photon->x[i] = x_cpy[i];
