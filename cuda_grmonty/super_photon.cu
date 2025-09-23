@@ -120,8 +120,8 @@ load_validate_photon(struct PhotonArray photon, struct PhotonArray photon_new, e
  * @param bi           Device array of photon bias factors.
  */
 static __global__ void setup_variables(const struct harm::Header *header,
-                                       const cuda_harm::Data data,
-                                       const harm::Units *units,
+                                       const struct cuda_harm::Data data,
+                                       const struct harm::Units *units,
                                        const struct cuda_harm::Tables tables,
                                        double bias_norm,
                                        struct PhotonArray photon,
@@ -177,7 +177,7 @@ static __global__ void step_size(const struct harm::Header *header,
  * @param dl           Device array to store path length increments for each photon.
  */
 static __global__ void
-push_photon(const harm::Header *header, struct PhotonArray photon, enum PhotonState *photon_state, double *dl);
+push_photon(const struct harm::Header *header, struct PhotonArray photon, enum PhotonState *photon_state, double *dl);
 
 /**
  * @brief Compute photon interactions with the fluid, including absorption and scattering increments.
@@ -205,9 +205,9 @@ push_photon(const harm::Header *header, struct PhotonArray photon, enum PhotonSt
  * @param d_tau_abs     Device array of absorption optical depth increments.
  * @param bias          Device array of updated photon biases after interaction.
  */
-static __global__ void interact_photon(const harm::Header *header,
-                                       const cuda_harm::Data data,
-                                       const harm::Units *units,
+static __global__ void interact_photon(const struct harm::Header *header,
+                                       const struct cuda_harm::Data data,
+                                       const struct harm::Units *units,
                                        const struct cuda_harm::Tables tables,
                                        struct PhotonArray photon,
                                        enum PhotonState *photon_state,
@@ -256,9 +256,9 @@ static __global__ void interact_photon(const harm::Header *header,
  * @param bias          Device array of updated photon biases after interaction.
  */
 static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
-                                         const harm::Header *header,
-                                         const cuda_harm::Data data,
-                                         const harm::Units *units,
+                                         const struct harm::Header *header,
+                                         const struct cuda_harm::Data data,
+                                         const struct harm::Units *units,
                                          const struct cuda_harm::Tables tables,
                                          struct PhotonArray photon,
                                          enum PhotonState *photon_state,
@@ -294,7 +294,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
  * @param g_cov        Metric connection coefficients for Lorentz transformations.
  */
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_state,
-                                            const harm::Units *units,
+                                            const struct harm::Units *units,
                                             struct PhotonArray photon,
                                             enum PhotonState *photon_state,
                                             bool *scatter_cond,
@@ -334,7 +334,7 @@ static __global__ void record_super_photon(const struct harm::Header *header,
  * @param photon    Photon to propagate.
  * @param step_size Distance to propagate photon.
  */
-static __device__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double step_size);
+static __device__ void push_photon(const struct harm::Header *header, struct photon::Photon *photon, double step_size);
 
 /**
  * @brief Device helper: advance a single photon along a step.
@@ -346,7 +346,7 @@ static __device__ void push_photon(const harm::Header *header, struct photon::Ph
  * @return Energy and estimated errors.
  */
 static __device__ std::tuple<double, double, double>
-push_photon_step(const harm::Header *header, struct photon::Photon *photon, double step_size);
+push_photon_step(const struct harm::Header *header, struct photon::Photon *photon, double step_size);
 
 /**
  * @brief Compute photon weight bias factor for Monte Carlo propagation.
@@ -367,7 +367,7 @@ static __device__ double bias_func(double bias_norm, double t_e, double w);
  * @param k_con  Photon canonical momentum 4-vector.
  * @param d_k    Output derivative of momentum along geodesic.
  */
-static __device__ void init_dkdlam(const harm::Header *header,
+static __device__ void init_dkdlam(const struct harm::Header *header,
                                    const double (&x)[consts::n_dim],
                                    const double (&k_con)[consts::n_dim],
                                    double (&d_k)[consts::n_dim]);
@@ -405,7 +405,7 @@ __device__ __forceinline__ int lconn_flat_idx(int i, int j, int k) {
  * @param lconn  Output 3D array of connection coefficients.
  */
 static __device__ void
-get_connection(const harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]);
+get_connection(const struct harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]);
 
 /**
  * @brief Sample a scattered photon momentum from the electron distribution.
@@ -440,8 +440,8 @@ boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double
  */
 static __device__ double atomic_max_double(double *addr, double val);
 
-void alloc_memory(const harm::Header &header,
-                  const harm::Data &data,
+void alloc_memory(const struct harm::Header &header,
+                  const struct harm::Data &data,
                   const struct harm::Units &units,
                   const ndarray::NDArray<double, 2> &hotcross_table,
                   const std::array<double, consts::n_e_samp + 1> &f,
@@ -896,8 +896,8 @@ load_validate_photon(struct PhotonArray photon, struct PhotonArray photon_new, e
 }
 
 static __global__ void setup_variables(const struct harm::Header *header,
-                                       const cuda_harm::Data data,
-                                       const harm::Units *units,
+                                       const struct cuda_harm::Data data,
+                                       const struct harm::Units *units,
                                        const struct cuda_harm::Tables tables,
                                        double bias_norm,
                                        struct PhotonArray photon,
@@ -1025,8 +1025,10 @@ static __global__ void step_size(const struct harm::Header *header,
     step_size[tid] = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
 }
 
-static __global__ void
-push_photon(const harm::Header *header, struct PhotonArray photon, enum PhotonState *photon_state, double *step_size) {
+static __global__ void push_photon(const struct harm::Header *header,
+                                   struct PhotonArray photon,
+                                   enum PhotonState *photon_state,
+                                   double *step_size) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (photon_state[tid] != PhotonState::Initialized) {
@@ -1051,9 +1053,9 @@ push_photon(const harm::Header *header, struct PhotonArray photon, enum PhotonSt
     photon.e_0_s[tid] = p.e_0_s;
 }
 
-static __global__ void interact_photon(const harm::Header *header,
-                                       const cuda_harm::Data data,
-                                       const harm::Units *units,
+static __global__ void interact_photon(const struct harm::Header *header,
+                                       const struct cuda_harm::Data data,
+                                       const struct harm::Units *units,
                                        const struct cuda_harm::Tables tables,
                                        struct PhotonArray photon,
                                        enum PhotonState *photon_state,
@@ -1136,9 +1138,9 @@ static __global__ void interact_photon(const harm::Header *header,
 }
 
 static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
-                                         const harm::Header *header,
-                                         const cuda_harm::Data data,
-                                         const harm::Units *units,
+                                         const struct harm::Header *header,
+                                         const struct cuda_harm::Data data,
+                                         const struct harm::Units *units,
                                          const struct cuda_harm::Tables tables,
                                          struct PhotonArray photon,
                                          enum PhotonState *photon_state,
@@ -1292,7 +1294,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
 }
 
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_state,
-                                            const harm::Units *units,
+                                            const struct harm::Units *units,
                                             struct PhotonArray photon,
                                             enum PhotonState *photon_state,
                                             bool *scatter_cond,
@@ -1481,7 +1483,7 @@ static __device__ double bias_func(double bias_norm, double t_e, double w) {
     return bias / consts::tp_over_te;
 }
 
-static __device__ void init_dkdlam(const harm::Header *header,
+static __device__ void init_dkdlam(const struct harm::Header *header,
                                    const double (&x)[consts::n_dim],
                                    const double (&k_con)[consts::n_dim],
                                    double (&d_k)[consts::n_dim]) {
@@ -1505,7 +1507,7 @@ static __device__ void init_dkdlam(const harm::Header *header,
 }
 
 static __device__ void
-get_connection(const harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]) {
+get_connection(const struct harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]) {
     const double r1 = exp(x[1]);
     const double r2 = r1 * r1;
     const double r3 = r2 * r1;
@@ -1643,7 +1645,7 @@ get_connection(const harm::Header *header, const double (&x)[consts::n_dim], dou
     lconn[lconn_flat_idx(3, 3, 3)] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
 }
 
-static __device__ void push_photon(const harm::Header *header, struct photon::Photon *photon, double dl) {
+static __device__ void push_photon(const struct harm::Header *header, struct photon::Photon *photon, double dl) {
     if (photon->x[1] < header->x_start[1]) {
         return;
     }
@@ -1685,7 +1687,7 @@ static __device__ void push_photon(const harm::Header *header, struct photon::Ph
 }
 
 static __device__ std::tuple<double, double, double>
-push_photon_step(const harm::Header *header, struct photon::Photon *photon, double dl) {
+push_photon_step(const struct harm::Header *header, struct photon::Photon *photon, double dl) {
     const double dl_2 = 0.5 * dl;
     double k[consts::n_dim];
 
@@ -1721,7 +1723,7 @@ push_photon_step(const harm::Header *header, struct photon::Photon *photon, doub
                  lconn[lconn_flat_idx(i, 2, 2)] * k[2] * k[2] + lconn[lconn_flat_idx(i, 3, 3)] * k[3] * k[3]);
 
             double old_k = k[i];
-            k[i] = photon->k[i] + dl_2 * photon->dkdlam[i];
+            k[i] = fma(dl_2, photon->dkdlam[i], photon->k[i]);
             err += fabs((old_k - k[i]) / (k[i] + consts::eps));
         }
     } while (err > consts::e_tol && iter < consts::max_iter);
