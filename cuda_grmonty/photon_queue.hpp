@@ -65,7 +65,14 @@ public:
      *
      * @return True if the queue has no photons, false otherwise.
      */
-    bool empty() const;
+    bool empty() const { return q_.empty(); }
+
+    /**
+     * @brief Returns queue size.
+     *
+     * @return Queue size.
+     */
+    size_t size() const { return q_.size(); }
 
 private:
     /**

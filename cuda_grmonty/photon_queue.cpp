@@ -40,9 +40,4 @@ photon::Photon PhotonQueue::dequeue() {
     return photon;
 }
 
-bool PhotonQueue::empty() const {
-    std::lock_guard<std::mutex> lock(m_);
-    return q_.empty();
-}
-
 }; /* namespace photon */

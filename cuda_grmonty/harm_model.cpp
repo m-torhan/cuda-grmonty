@@ -342,7 +342,7 @@ void HARMModel::run_simulation() {
 #ifdef CUDA
     cuda_super_photon::alloc_memory(header_, data_, units_, hotcross_table_, f_, k2_);
 
-    photon::PhotonQueue photon_queue(consts::cuda::threads_per_grid);
+    photon::PhotonQueue photon_queue(consts::cuda::n_photons * 2);
     std::binary_semaphore done_sem{0};
 
     std::thread make_super_photon_thread(
