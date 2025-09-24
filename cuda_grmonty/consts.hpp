@@ -160,9 +160,10 @@ const double l_e_0 = std::log(1.0e-12); /* Location of first bin in electron res
  */
 namespace cuda {
 
-constexpr int grid_dim = 128;                          /* Grid dimension */
-constexpr int block_dim = 128;                         /* Block dimension */
+constexpr int grid_dim = 64;                           /* Grid dimension */
+constexpr int block_dim = 64;                          /* Block dimension */
 constexpr int threads_per_grid = block_dim * grid_dim; /* Total number of threads per grid */
+constexpr int n_photons = threads_per_grid * 8;        /* Number of photons processed at once */
 
 } /* namespace cuda */
 

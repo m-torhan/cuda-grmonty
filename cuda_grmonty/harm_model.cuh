@@ -26,6 +26,16 @@ static __device__ void
 gcon_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_con)[consts::n_dim][consts::n_dim]);
 
 /**
+ * @brief Compute first dimension of the contravariant metric tensor g^μν at a given coordinate.
+ *
+ * @param header Pointer to the HARM simulation header (grid and domain info).
+ * @param x      Coordinate array (size = consts::n_dim).
+ * @param g_con  Output contravariant metric tensor g^μν.
+ */
+static __device__ void
+gcon_0_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_con_0)[consts::n_dim]);
+
+/**
  * @brief Compute the covariant metric tensor g_μν at a given coordinate.
  *
  * @param header Pointer to the HARM simulation header (grid and domain info).
@@ -36,7 +46,7 @@ static __device__ void
 gcov_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_cov)[consts::n_dim][consts::n_dim]);
 
 /**
- * @brief Compute the first dimension of covariant metric tensor g_μν at a given coordinate.
+ * @brief Compute the first dimension of the covariant metric tensor g_μν at a given coordinate.
  *
  * @param header Pointer to the HARM simulation header (grid and domain info).
  * @param x      Coordinate array (size = consts::n_dim).
@@ -117,10 +127,16 @@ static __device__ void
 gcon_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_con)[consts::n_dim][consts::n_dim]) {
     harm::BLCoord bl_coord = get_bl_coord(header, x);
 
-    const double sin_theta = fabs(sin(bl_coord.theta)) + consts::eps;
-    const double cos_theta = cos(bl_coord.theta);
+    double sin_theta;
+    double cos_theta;
+    sincos(bl_coord.theta, &sin_theta, &cos_theta);
 
-    const double irho2 = 1.0 / (bl_coord.r * bl_coord.r + header->a * header->a * cos_theta * cos_theta);
+    const double abs_sin_theta = fabs(sin_theta) + consts::eps;
+
+    const double a2 = header->a * header->a;
+    const double r2 = bl_coord.r * bl_coord.r;
+
+    const double irho2 = 1.0 / (r2 + a2 * cos_theta * cos_theta);
 
     const double hfac = CUDART_PI + (1.0 - header->h_slope) * CUDART_PI * std::cos(2.0 * CUDART_PI * x[2]);
 
@@ -130,7 +146,7 @@ gcon_func(const harm::Header *header, const double (&x)[consts::n_dim], double (
     g_con[0][3] = 0.0;
 
     g_con[1][0] = g_con[0][1];
-    g_con[1][1] = irho2 * (bl_coord.r * (bl_coord.r - 2.0) + header->a * header->a) / (bl_coord.r * bl_coord.r);
+    g_con[1][1] = irho2 * (r2 - 2.0 * bl_coord.r + a2) / r2;
     g_con[1][2] = 0.0;
     g_con[1][3] = header->a * irho2 / bl_coord.r;
 
@@ -142,17 +158,37 @@ gcon_func(const harm::Header *header, const double (&x)[consts::n_dim], double (
     g_con[3][0] = 0.0;
     g_con[3][1] = g_con[1][3];
     g_con[3][2] = 0.0;
-    g_con[3][3] = irho2 / (sin_theta * sin_theta);
+    g_con[3][3] = irho2 / (abs_sin_theta * abs_sin_theta);
+}
+
+static __device__ void
+gcon_0_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_con)[consts::n_dim]) {
+    harm::BLCoord bl_coord = get_bl_coord(header, x);
+
+    double cos_theta = cos(bl_coord.theta);
+
+    const double a2 = header->a * header->a;
+    const double r2 = bl_coord.r * bl_coord.r;
+
+    const double irho2 = 1.0 / (r2 + a2 * cos_theta * cos_theta);
+
+    g_con[0] = -1.0 - 2.0 * bl_coord.r * irho2;
+    g_con[1] = 2.0 * irho2;
+    g_con[2] = 0.0;
+    g_con[3] = 0.0;
 }
 
 static __device__ void
 gcov_func(const harm::Header *header, const double (&x)[consts::n_dim], double (&g_cov)[consts::n_dim][consts::n_dim]) {
     harm::BLCoord bl_coord = get_bl_coord(header, x);
 
-    const double sin_theta = std::fabs(std::sin(bl_coord.theta)) + consts::eps;
-    const double cos_theta = std::cos(bl_coord.theta);
+    double sin_theta;
+    double cos_theta;
+    sincos(bl_coord.theta, &sin_theta, &cos_theta);
 
-    const double sin_theta_2 = sin_theta * sin_theta;
+    const double abs_sin_theta = fabs(sin_theta) + consts::eps;
+
+    const double sin_theta_2 = abs_sin_theta * abs_sin_theta;
     const double rho2 = bl_coord.r * bl_coord.r + header->a * header->a * cos_theta * cos_theta;
 
     const double tfac = 1.0;
@@ -160,15 +196,18 @@ gcov_func(const harm::Header *header, const double (&x)[consts::n_dim], double (
     const double hfac = CUDART_PI + (1.0 - header->h_slope) * CUDART_PI * std::cos(2.0 * CUDART_PI * x[2]);
     const double pfac = 1.0;
 
-    g_cov[0][0] = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
-    g_cov[0][1] = (2.0 * bl_coord.r / rho2) * tfac * rfac;
+    const double inv_rho2 = 1.0 / rho2;
+    const double r_inv_rho2_2 = 2.0 * bl_coord.r * inv_rho2;
+
+    g_cov[0][0] = (-1.0 + r_inv_rho2_2) * tfac * tfac;
+    g_cov[0][1] = r_inv_rho2_2 * tfac * rfac;
     g_cov[0][2] = 0.0;
-    g_cov[0][3] = (-2.0 * header->a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
+    g_cov[0][3] = (-2.0 * header->a * bl_coord.r * sin_theta_2 * inv_rho2) * tfac * pfac;
 
     g_cov[1][0] = g_cov[0][1];
-    g_cov[1][1] = (1.0 + 2.0 * bl_coord.r / rho2) * rfac * rfac;
+    g_cov[1][1] = (1.0 + r_inv_rho2_2) * rfac * rfac;
     g_cov[1][2] = 0.0;
-    g_cov[1][3] = (-header->a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * rfac * pfac;
+    g_cov[1][3] = (-header->a * sin_theta_2 * (1.0 + r_inv_rho2_2)) * rfac * pfac;
 
     g_cov[2][0] = 0.0;
     g_cov[2][1] = 0.0;
@@ -179,7 +218,7 @@ gcov_func(const harm::Header *header, const double (&x)[consts::n_dim], double (
     g_cov[3][1] = g_cov[1][3];
     g_cov[3][2] = 0.0;
     g_cov[3][3] =
-        sin_theta_2 * (rho2 + header->a * header->a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r / rho2)) * pfac * pfac;
+        sin_theta_2 * (rho2 + header->a * header->a * sin_theta_2 * (1.0 + 2.0 * bl_coord.r * inv_rho2)) * pfac * pfac;
 }
 
 static __device__ void
@@ -196,10 +235,12 @@ gcov_0_func(const harm::Header *header, const double (&x)[consts::n_dim], double
     const double rfac = bl_coord.r - header->r_0;
     const double pfac = 1.0;
 
-    g_cov_0[0] = (-1.0 + 2.0 * bl_coord.r / rho2) * tfac * tfac;
-    g_cov_0[1] = (2.0 * bl_coord.r / rho2) * tfac * rfac;
+    const double inv_rho2 = 1.0 / rho2;
+
+    g_cov_0[0] = (-1.0 + 2.0 * bl_coord.r * inv_rho2) * tfac * tfac;
+    g_cov_0[1] = (2.0 * bl_coord.r * inv_rho2) * tfac * rfac;
     g_cov_0[2] = 0.0;
-    g_cov_0[3] = (-2.0 * header->a * bl_coord.r * sin_theta_2 / rho2) * tfac * pfac;
+    g_cov_0[3] = (-2.0 * header->a * bl_coord.r * sin_theta_2 * inv_rho2) * tfac * pfac;
 }
 
 static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
@@ -254,9 +295,9 @@ static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
         interp_scalar(u_3, header->n[1], i, j, coeff),
     };
 
-    double g_con[consts::n_dim][consts::n_dim];
+    double g_con_0[consts::n_dim];
 
-    gcon_func(header, x, g_con);
+    gcon_0_func(header, x, g_con_0);
 
     double v_dot_v = 0.0;
 
@@ -266,12 +307,12 @@ static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
         }
     }
 
-    const double v_fac = sqrt(-1.0 / g_con[0][0] * (1.0 + abs(v_dot_v)));
+    const double v_fac = sqrt(-1.0 / g_con_0[0] * (1.0 + abs(v_dot_v)));
 
-    fluid_params.u_con[0] = -v_fac * g_con[0][0];
+    fluid_params.u_con[0] = -v_fac * g_con_0[0];
 
     for (int i = 1; i < consts::n_dim; ++i) {
-        fluid_params.u_con[i] = v_con[i] - v_fac * g_con[0][i];
+        fluid_params.u_con[i] = v_con[i] - v_fac * g_con_0[i];
     }
     cuda_tetrads::lower(fluid_params.u_con, g_cov, fluid_params.u_cov);
 
@@ -287,7 +328,7 @@ static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
 
     fluid_params.b =
         sqrt(fluid_params.b_con[0] * fluid_params.b_cov[0] + fluid_params.b_con[1] * fluid_params.b_cov[1] +
-                  fluid_params.b_con[2] * fluid_params.b_cov[2] + fluid_params.b_con[3] * fluid_params.b_cov[3]) *
+             fluid_params.b_con[2] * fluid_params.b_cov[2] + fluid_params.b_con[3] * fluid_params.b_cov[3]) *
         units->b_unit;
 
     return fluid_params;

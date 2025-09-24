@@ -26,6 +26,8 @@
 
 namespace cuda_super_photon {
 
+const int n_photons = consts::cuda::n_photons;
+
 /**
  * @brief Maximum scattering optical depth per photon (device).
  */
@@ -507,21 +509,22 @@ void track_super_photons(double bias_norm,
                          uint64_t &n_super_photon_scatt) {
     const int grid_dim = consts::cuda::grid_dim;
     const int block_dim = consts::cuda::block_dim;
-    const int n = consts::cuda::threads_per_grid;
 
     struct PhotonArray photon_new;
     for (int i = 0; i < consts::n_dim; ++i) {
-        photon_new.x[i] = new double[n];
-        photon_new.k[i] = new double[n];
+        photon_new.x[i] = new double[n_photons];
+        photon_new.k[i] = new double[n_photons];
     }
-    photon_new.w = new double[n];
-    photon_new.e = new double[n];
-    photon_new.l = new double[n];
-    photon_new.n_e_0 = new double[n];
-    photon_new.b_0 = new double[n];
-    photon_new.theta_e_0 = new double[n];
+    photon_new.w = new double[n_photons];
+    photon_new.e = new double[n_photons];
+    photon_new.l = new double[n_photons];
+    photon_new.n_e_0 = new double[n_photons];
+    photon_new.b_0 = new double[n_photons];
+    photon_new.theta_e_0 = new double[n_photons];
+    photon_new.e_0 = new double[n_photons];
+    photon_new.n_scatt = new int[n_photons];
 
-    enum PhotonState photon_state[n];
+    enum PhotonState photon_state[n_photons];
     std::fill(std::begin(photon_state), std::end(photon_state), PhotonState::Empty);
 
     curandStatePhilox4_32_10_t *dev_rng_state;
@@ -544,7 +547,7 @@ void track_super_photons(double bias_norm,
     double *dev_step_size;
 
     bool *dev_interact_cond;
-    bool *scatter_cond = new bool[n];
+    bool *scatter_cond = new bool[n_photons];
     bool *dev_scatter_cond;
     double *dev_d_tau_scatt;
     double *dev_d_tau_abs;
@@ -552,15 +555,17 @@ void track_super_photons(double bias_norm,
 
     struct PhotonArray photon_p;
     for (int i = 0; i < consts::n_dim; ++i) {
-        photon_p.x[i] = new double[n];
-        photon_p.k[i] = new double[n];
+        photon_p.x[i] = new double[n_photons];
+        photon_p.k[i] = new double[n_photons];
     }
-    photon_p.w = new double[n];
-    photon_p.e = new double[n];
-    photon_p.l = new double[n];
-    photon_p.n_e_0 = new double[n];
-    photon_p.b_0 = new double[n];
-    photon_p.theta_e_0 = new double[n];
+    photon_p.w = new double[n_photons];
+    photon_p.e = new double[n_photons];
+    photon_p.l = new double[n_photons];
+    photon_p.n_e_0 = new double[n_photons];
+    photon_p.b_0 = new double[n_photons];
+    photon_p.theta_e_0 = new double[n_photons];
+    photon_p.e_0 = new double[n_photons];
+    photon_p.n_scatt = new int[n_photons];
 
     struct PhotonArray dev_photon_p;
     struct harm::FluidParams *dev_fluid_params;
@@ -568,36 +573,36 @@ void track_super_photons(double bias_norm,
 
     gpuErrchk(cudaMemcpyToSymbol(dev_max_tau_scatt, &max_tau_scatt, sizeof(double)));
 
-    gpuErrchk(cudaMalloc((void **)&dev_rng_state, n * sizeof(curandStatePhilox4_32_10_t)));
+    gpuErrchk(cudaMalloc((void **)&dev_rng_state, n_photons * sizeof(curandStatePhilox4_32_10_t)));
 
     /* TODO: optimize memory usage by allocating only the parts that are needed */
-    alloc_photon_array(dev_photon, n);
-    gpuErrchk(cudaMalloc((void **)&dev_photon_state, n * sizeof(enum PhotonState)));
-    alloc_photon_array(dev_photon_new, n);
-    alloc_photon_array(dev_photon_2, n);
-    gpuErrchk(cudaMalloc((void **)&dev_n_step, n * sizeof(int)));
+    alloc_photon_array(dev_photon, n_photons);
+    gpuErrchk(cudaMalloc((void **)&dev_photon_state, n_photons * sizeof(enum PhotonState)));
+    alloc_photon_array(dev_photon_new, n_photons);
+    alloc_photon_array(dev_photon_2, n_photons);
+    gpuErrchk(cudaMalloc((void **)&dev_n_step, n_photons * sizeof(int)));
 
-    gpuErrchk(cudaMalloc((void **)&dev_fluid_n_e, n * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_fluid_n_e, n_photons * sizeof(double)));
 
-    gpuErrchk(cudaMalloc((void **)&dev_theta, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_nu, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_alpha_scatti, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_alpha_absi, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_bi, n * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_theta, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_nu, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_alpha_scatti, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_alpha_absi, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_bi, n_photons * sizeof(double)));
 
-    gpuErrchk(cudaMalloc((void **)&dev_step_size, n * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_step_size, n_photons * sizeof(double)));
 
-    gpuErrchk(cudaMalloc((void **)&dev_interact_cond, n * sizeof(bool)));
-    gpuErrchk(cudaMalloc((void **)&dev_scatter_cond, n * sizeof(bool)));
-    gpuErrchk(cudaMalloc((void **)&dev_d_tau_scatt, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_d_tau_abs, n * sizeof(double)));
-    gpuErrchk(cudaMalloc((void **)&dev_bias, n * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_interact_cond, n_photons * sizeof(bool)));
+    gpuErrchk(cudaMalloc((void **)&dev_scatter_cond, n_photons * sizeof(bool)));
+    gpuErrchk(cudaMalloc((void **)&dev_d_tau_scatt, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_d_tau_abs, n_photons * sizeof(double)));
+    gpuErrchk(cudaMalloc((void **)&dev_bias, n_photons * sizeof(double)));
 
-    alloc_photon_array(dev_photon_p, n);
-    gpuErrchk(cudaMalloc((void **)&dev_fluid_params, n * sizeof(struct harm::FluidParams)));
-    gpuErrchk(cudaMalloc((void **)&dev_g_cov, n * consts::n_dim * consts::n_dim * sizeof(double)));
+    alloc_photon_array(dev_photon_p, n_photons);
+    gpuErrchk(cudaMalloc((void **)&dev_fluid_params, n_photons * sizeof(struct harm::FluidParams)));
+    gpuErrchk(cudaMalloc((void **)&dev_g_cov, n_photons * consts::n_dim * consts::n_dim * sizeof(double)));
 
-    gpuErrchk(cudaMemset(dev_photon_state, 0, n * sizeof(enum PhotonState)));
+    gpuErrchk(cudaMemset(dev_photon_state, 0, n_photons * sizeof(enum PhotonState)));
 
     init_rng<<<grid_dim, block_dim>>>(dev_rng_state);
 
@@ -615,7 +620,7 @@ void track_super_photons(double bias_norm,
         /* feed photons into array */
         all_done = true;
         if (n_iter % 16 == 0) {
-            for (int i = 0; i < n; ++i) {
+            for (int i = 0; i < n_photons; ++i) {
                 if (photon_state[i] == PhotonState::Empty && !photon_queue.empty()) {
                     photon::Photon p = photon_queue.dequeue();
                     for (int j = 0; j < consts::n_dim; ++j) {
@@ -628,6 +633,8 @@ void track_super_photons(double bias_norm,
                     photon_new.n_e_0[i] = p.n_e_0;
                     photon_new.b_0[i] = p.b_0;
                     photon_new.theta_e_0[i] = p.theta_e_0;
+                    photon_new.e_0[i] = p.e_0;
+                    photon_new.n_scatt[i] = p.n_scatt;
                     photon_state[i] = PhotonState::New;
                 }
                 if (photon_state[i] != PhotonState::Empty) {
@@ -641,18 +648,27 @@ void track_super_photons(double bias_norm,
 
             /* load and validate new photons */
             for (int i = 0; i < consts::n_dim; ++i) {
-                gpuErrchk(cudaMemcpy(dev_photon_new.x[i], photon_new.x[i], n * sizeof(double), cudaMemcpyHostToDevice));
-                gpuErrchk(cudaMemcpy(dev_photon_new.k[i], photon_new.k[i], n * sizeof(double), cudaMemcpyHostToDevice));
+                gpuErrchk(cudaMemcpy(
+                    dev_photon_new.x[i], photon_new.x[i], n_photons * sizeof(double), cudaMemcpyHostToDevice));
+                gpuErrchk(cudaMemcpy(
+                    dev_photon_new.k[i], photon_new.k[i], n_photons * sizeof(double), cudaMemcpyHostToDevice));
             }
-            gpuErrchk(cudaMemcpy(dev_photon_new.w, photon_new.w, n * sizeof(double), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(dev_photon_new.e, photon_new.e, n * sizeof(double), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(dev_photon_new.l, photon_new.l, n * sizeof(double), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(dev_photon_new.n_e_0, photon_new.n_e_0, n * sizeof(double), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(dev_photon_new.b_0, photon_new.b_0, n * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(dev_photon_new.w, photon_new.w, n_photons * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(dev_photon_new.e, photon_new.e, n_photons * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(dev_photon_new.l, photon_new.l, n_photons * sizeof(double), cudaMemcpyHostToDevice));
             gpuErrchk(
-                cudaMemcpy(dev_photon_new.theta_e_0, photon_new.theta_e_0, n * sizeof(double), cudaMemcpyHostToDevice));
+                cudaMemcpy(dev_photon_new.n_e_0, photon_new.n_e_0, n_photons * sizeof(double), cudaMemcpyHostToDevice));
             gpuErrchk(
-                cudaMemcpy(dev_photon_state, &photon_state[0], n * sizeof(enum PhotonState), cudaMemcpyHostToDevice));
+                cudaMemcpy(dev_photon_new.b_0, photon_new.b_0, n_photons * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(
+                dev_photon_new.theta_e_0, photon_new.theta_e_0, n_photons * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(
+                cudaMemcpy(dev_photon_new.e_0, photon_new.e_0, n_photons * sizeof(double), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(
+                dev_photon_new.n_scatt, photon_new.n_scatt, n_photons * sizeof(int), cudaMemcpyHostToDevice));
+
+            gpuErrchk(cudaMemcpy(
+                dev_photon_state, &photon_state[0], n_photons * sizeof(enum PhotonState), cudaMemcpyHostToDevice));
 
             load_validate_photon<<<grid_dim, block_dim>>>(dev_photon, dev_photon_new, dev_photon_state);
 
@@ -681,12 +697,15 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaDeviceSynchronize());
 
         for (int i = 0; i < consts::n_dim; ++i) {
-            gpuErrchk(cudaMemcpy(dev_photon_2.x[i], dev_photon.x[i], n * sizeof(double), cudaMemcpyDeviceToDevice));
-            gpuErrchk(cudaMemcpy(dev_photon_2.k[i], dev_photon.k[i], n * sizeof(double), cudaMemcpyDeviceToDevice));
             gpuErrchk(
-                cudaMemcpy(dev_photon_2.dkdlam[i], dev_photon.dkdlam[i], n * sizeof(double), cudaMemcpyDeviceToDevice));
+                cudaMemcpy(dev_photon_2.x[i], dev_photon.x[i], n_photons * sizeof(double), cudaMemcpyDeviceToDevice));
+            gpuErrchk(
+                cudaMemcpy(dev_photon_2.k[i], dev_photon.k[i], n_photons * sizeof(double), cudaMemcpyDeviceToDevice));
+            gpuErrchk(cudaMemcpy(
+                dev_photon_2.dkdlam[i], dev_photon.dkdlam[i], n_photons * sizeof(double), cudaMemcpyDeviceToDevice));
         }
-        gpuErrchk(cudaMemcpy(dev_photon_2.e_0_s, dev_photon.e_0_s, n * sizeof(double), cudaMemcpyDeviceToDevice));
+        gpuErrchk(
+            cudaMemcpy(dev_photon_2.e_0_s, dev_photon.e_0_s, n_photons * sizeof(double), cudaMemcpyDeviceToDevice));
 
         step_size<<<grid_dim, block_dim>>>(dev_header, dev_photon, dev_photon_state, dev_step_size);
         gpuErrchk(cudaDeviceSynchronize());
@@ -756,18 +775,22 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaDeviceSynchronize());
 
         for (int i = 0; i < consts::n_dim; ++i) {
-            gpuErrchk(cudaMemcpy(photon_p.x[i], dev_photon_p.x[i], n * sizeof(double), cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(photon_p.k[i], dev_photon_p.k[i], n * sizeof(double), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(photon_p.x[i], dev_photon_p.x[i], n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(photon_p.k[i], dev_photon_p.k[i], n_photons * sizeof(double), cudaMemcpyDeviceToHost));
         }
-        gpuErrchk(cudaMemcpy(photon_p.w, dev_photon_p.w, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(photon_p.e, dev_photon_p.e, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(photon_p.l, dev_photon_p.l, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(photon_p.n_e_0, dev_photon_p.n_e_0, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(photon_p.b_0, dev_photon_p.b_0, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(photon_p.theta_e_0, dev_photon_p.theta_e_0, n * sizeof(double), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(scatter_cond, dev_scatter_cond, n * sizeof(bool), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.w, dev_photon_p.w, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.e, dev_photon_p.e, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.l, dev_photon_p.l, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.n_e_0, dev_photon_p.n_e_0, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.b_0, dev_photon_p.b_0, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(
+            cudaMemcpy(photon_p.theta_e_0, dev_photon_p.theta_e_0, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.e_0, dev_photon_p.e_0, n_photons * sizeof(double), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(photon_p.n_scatt, dev_photon_p.n_scatt, n_photons * sizeof(int), cudaMemcpyDeviceToHost));
 
-        for (int i = 0; i < n; ++i) {
+        gpuErrchk(cudaMemcpy(scatter_cond, dev_scatter_cond, n_photons * sizeof(bool), cudaMemcpyDeviceToHost));
+
+        for (int i = 0; i < n_photons; ++i) {
             if (scatter_cond[i]) {
                 photon::Photon p;
 
@@ -781,6 +804,8 @@ void track_super_photons(double bias_norm,
                 p.n_e_0 = photon_p.n_e_0[i];
                 p.b_0 = photon_p.b_0[i];
                 p.theta_e_0 = photon_p.theta_e_0[i];
+                p.e_0 = photon_p.e_0[i];
+                p.n_scatt = photon_p.n_scatt[i];
 
                 photon_queue.force_enqueue(p);
             }
@@ -790,13 +815,16 @@ void track_super_photons(double bias_norm,
         incr_check_n_step<<<grid_dim, block_dim>>>(dev_n_step, dev_photon_state);
         gpuErrchk(cudaDeviceSynchronize());
 
-        /* record photons */
-        record_super_photon<<<grid_dim, block_dim>>>(
-            dev_header, dev_photon, dev_photon_state, dev_n_step, dev_spectrum);
-        gpuErrchk(cudaDeviceSynchronize());
+        if (n_iter % 16 == 0) {
+            /* record photons */
+            record_super_photon<<<grid_dim, block_dim>>>(
+                dev_header, dev_photon, dev_photon_state, dev_n_step, dev_spectrum);
+            gpuErrchk(cudaDeviceSynchronize());
 
-        /* copy photon state to host */
-        gpuErrchk(cudaMemcpy(&photon_state[0], dev_photon_state, n * sizeof(enum PhotonState), cudaMemcpyDeviceToHost));
+            /* copy photon state to host */
+            gpuErrchk(cudaMemcpy(
+                &photon_state[0], dev_photon_state, n_photons * sizeof(enum PhotonState), cudaMemcpyDeviceToHost));
+        }
     }
 
     gpuErrchk(cudaMemcpy(
@@ -849,6 +877,8 @@ void track_super_photons(double bias_norm,
     delete[] photon_p.n_e_0;
     delete[] photon_p.b_0;
     delete[] photon_p.theta_e_0;
+    delete[] photon_p.e_0;
+    delete[] photon_p.n_scatt;
 
     free_photon_array(dev_photon_p);
     gpuErrchk(cudaFree(dev_fluid_params));
@@ -863,35 +893,36 @@ static __global__ void init_rng(curandStatePhilox4_32_10_t *rng_state) {
 
 static __global__ void
 load_validate_photon(struct PhotonArray photon, struct PhotonArray photon_new, enum PhotonState *photon_state) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    if (photon_state[tid] != PhotonState::New) {
-        return;
-    }
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::New) {
+            continue;
+        }
 
 #pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon.x[i][tid] = photon_new.x[i][tid];
-        photon.k[i][tid] = photon_new.k[i][tid];
-    }
-    photon.w[tid] = photon_new.w[tid];
-    photon.e[tid] = photon_new.e[tid];
-    photon.e_0[tid] = photon_new.e[tid];
-    photon.e_0_s[tid] = photon_new.e[tid];
-    photon.l[tid] = photon_new.l[tid];
-    photon.tau_scatt[tid] = 0.0;
-    photon.tau_abs[tid] = 0.0;
-    photon.x1i[tid] = photon_new.x[1][tid];
-    photon.x2i[tid] = photon_new.x[2][tid];
-    photon.n_scatt[tid] = 0;
-    photon.n_e_0[tid] = photon_new.n_e_0[tid];
-    photon.b_0[tid] = photon_new.b_0[tid];
-    photon.theta_e_0[tid] = photon_new.theta_e_0[tid];
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon.x[i][tid] = photon_new.x[i][tid];
+            photon.k[i][tid] = photon_new.k[i][tid];
+        }
+        photon.w[tid] = photon_new.w[tid];
+        photon.e[tid] = photon_new.e[tid];
+        photon.e_0[tid] = photon_new.e_0[tid];
+        photon.e_0_s[tid] = photon_new.e[tid];
+        photon.l[tid] = photon_new.l[tid];
+        photon.tau_scatt[tid] = 0.0;
+        photon.tau_abs[tid] = 0.0;
+        photon.x1i[tid] = photon_new.x[1][tid];
+        photon.x2i[tid] = photon_new.x[2][tid];
+        photon.n_scatt[tid] = 0;
+        photon.n_e_0[tid] = photon_new.n_e_0[tid];
+        photon.b_0[tid] = photon_new.b_0[tid];
+        photon.theta_e_0[tid] = photon_new.theta_e_0[tid];
+        photon.n_scatt[tid] = photon_new.n_scatt[tid];
 
-    if (isnan(photon.x[0][tid]) || isnan(photon.x[1][tid]) || isnan(photon.x[2][tid]) || isnan(photon.x[3][tid]) ||
-        isnan(photon.k[0][tid]) || isnan(photon.k[1][tid]) || isnan(photon.k[2][tid]) || isnan(photon.k[3][tid]) ||
-        photon.w[tid] == 0.0) {
-        photon_state[tid] = PhotonState::Empty;
+        if (isnan(photon.x[0][tid]) || isnan(photon.x[1][tid]) || isnan(photon.x[2][tid]) || isnan(photon.x[3][tid]) ||
+            isnan(photon.k[0][tid]) || isnan(photon.k[1][tid]) || isnan(photon.k[2][tid]) || isnan(photon.k[3][tid]) ||
+            photon.w[tid] == 0.0) {
+            photon_state[tid] = PhotonState::Empty;
+        }
     }
 }
 
@@ -909,96 +940,94 @@ static __global__ void setup_variables(const struct harm::Header *header,
                                        double *alpha_scatti,
                                        double *alpha_absi,
                                        double *bi) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
     __shared__ double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::New) {
+            continue;
+        }
 
-    if (photon_state[tid] != PhotonState::New) {
-        return;
-    }
+        const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
+        const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
 
-    const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
-    const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
+        cuda_harm::gcov_func(header, photon_x, g_cov[threadIdx.x]);
 
-    cuda_harm::gcov_func(header, photon_x, g_cov[threadIdx.x]);
+        harm::FluidParams fluid_params = cuda_harm::get_fluid_params(header,
+                                                                     units,
+                                                                     data.k_rho,
+                                                                     data.u,
+                                                                     data.u_1,
+                                                                     data.u_2,
+                                                                     data.u_3,
+                                                                     data.b_1,
+                                                                     data.b_2,
+                                                                     data.b_3,
+                                                                     photon_x,
+                                                                     g_cov[threadIdx.x]);
 
-    harm::FluidParams fluid_params = cuda_harm::get_fluid_params(header,
-                                                                 units,
-                                                                 data.k_rho,
-                                                                 data.u,
-                                                                 data.u_1,
-                                                                 data.u_2,
-                                                                 data.u_3,
-                                                                 data.b_1,
-                                                                 data.b_2,
-                                                                 data.b_3,
-                                                                 photon_x,
-                                                                 g_cov[threadIdx.x]);
+        fluid_n_e[tid] = fluid_params.n_e;
 
-    fluid_n_e[tid] = fluid_params.n_e;
+        theta[tid] = cuda_radiation::bk_angle(
+            photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
+        nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
+        alpha_scatti[tid] =
+            cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
+        alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
+            nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
+        bi[tid] = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
 
-    theta[tid] = cuda_radiation::bk_angle(
-        photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
-    nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
-    alpha_scatti[tid] =
-        cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
-    alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-        nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
-    bi[tid] = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
-
-    double photon_dkdlam[consts::n_dim];
-    init_dkdlam(header, photon_x, photon_k, photon_dkdlam);
+        double photon_dkdlam[consts::n_dim];
+        init_dkdlam(header, photon_x, photon_k, photon_dkdlam);
 
 #pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon.dkdlam[i][tid] = photon_dkdlam[i];
-    }
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon.dkdlam[i][tid] = photon_dkdlam[i];
+        }
 
-    n_step[tid] = 0;
-    photon_state[tid] = PhotonState::Initialized;
+        n_step[tid] = 0;
+        photon_state[tid] = PhotonState::Initialized;
+    }
 }
 
 static __global__ void stop_criterion(curandStatePhilox4_32_10_t *rng_state,
                                       const struct harm::Header *header,
                                       struct PhotonArray photon,
                                       enum PhotonState *photon_state) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    if (photon_state[tid] != PhotonState::Initialized) {
-        return;
-    }
-
     double rh_ = 1.0 + sqrt(1.0 - header->a * header->a);
     double x1_min_ = log(rh_);
     double x1_max = log(consts::r_max);
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
 
-    /* TODO: reduce branching */
-    if (photon.x[1][tid] < x1_min_) {
-        /* stop at event horizon */
-        photon_state[tid] = PhotonState::Tracked;
-        return;
-    }
+        /* TODO: reduce branching */
+        if (photon.x[1][tid] < x1_min_) {
+            /* stop at event horizon */
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
 
-    if (photon.x[1][tid] > x1_max) {
-        /* stop at large distance */
+        if (photon.x[1][tid] > x1_max) {
+            /* stop at large distance */
+            if (photon.w[tid] < consts::weight_min) {
+                if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                    photon.w[tid] *= consts::roulette;
+                } else {
+                    photon.w[tid] = 0.0;
+                }
+            }
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
+
         if (photon.w[tid] < consts::weight_min) {
             if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
                 photon.w[tid] *= consts::roulette;
             } else {
                 photon.w[tid] = 0.0;
+                photon_state[tid] = PhotonState::Tracked;
+                continue;
             }
-        }
-        photon_state[tid] = PhotonState::Tracked;
-        return;
-    }
-
-    if (photon.w[tid] < consts::weight_min) {
-        if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
-            photon.w[tid] *= consts::roulette;
-        } else {
-            photon.w[tid] = 0.0;
-            photon_state[tid] = PhotonState::Tracked;
-            return;
         }
     }
 }
@@ -1007,50 +1036,50 @@ static __global__ void step_size(const struct harm::Header *header,
                                  struct PhotonArray photon,
                                  enum PhotonState *photon_state,
                                  double *step_size) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
 
-    if (photon_state[tid] != PhotonState::Initialized) {
-        return;
+        double dl_x_1 = consts::step_eps * photon.x[1][tid] / (fabs(photon.k[1][tid]) + consts::eps);
+        double dl_x_2 = consts::step_eps * fmin(photon.x[2][tid], header->x_stop[2] - photon.x[2][tid]) /
+                        (fabs(photon.k[2][tid]) + consts::eps);
+        double dl_x_3 = consts::step_eps / (fabs(photon.k[3][tid]) + consts::eps);
+
+        double i_dl_x_1 = 1.0 / (fabs(dl_x_1) + consts::eps);
+        double i_dl_x_2 = 1.0 / (fabs(dl_x_2) + consts::eps);
+        double i_dl_x_3 = 1.0 / (fabs(dl_x_3) + consts::eps);
+
+        step_size[tid] = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
     }
-
-    double dl_x_1 = consts::step_eps * photon.x[1][tid] / (fabs(photon.k[1][tid]) + consts::eps);
-    double dl_x_2 = consts::step_eps * fmin(photon.x[2][tid], header->x_stop[2] - photon.x[2][tid]) /
-                    (fabs(photon.k[2][tid]) + consts::eps);
-    double dl_x_3 = consts::step_eps / (fabs(photon.k[3][tid]) + consts::eps);
-
-    double i_dl_x_1 = 1.0 / (fabs(dl_x_1) + consts::eps);
-    double i_dl_x_2 = 1.0 / (fabs(dl_x_2) + consts::eps);
-    double i_dl_x_3 = 1.0 / (fabs(dl_x_3) + consts::eps);
-
-    step_size[tid] = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
 }
 
 static __global__ void push_photon(const struct harm::Header *header,
                                    struct PhotonArray photon,
                                    enum PhotonState *photon_state,
                                    double *step_size) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
 
-    if (photon_state[tid] != PhotonState::Initialized) {
-        return;
-    }
+        struct photon::Photon p = {
+            .x = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]},
+            .k = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]},
+            .dkdlam = {photon.dkdlam[0][tid], photon.dkdlam[1][tid], photon.dkdlam[2][tid], photon.dkdlam[3][tid]},
+            .e_0_s = photon.e_0_s[tid],
+        };
 
-    struct photon::Photon p = {
-        .x = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]},
-        .k = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]},
-        .dkdlam = {photon.dkdlam[0][tid], photon.dkdlam[1][tid], photon.dkdlam[2][tid], photon.dkdlam[3][tid]},
-        .e_0_s = photon.e_0_s[tid],
-    };
-
-    push_photon(header, &p, step_size[tid]);
+        push_photon(header, &p, step_size[tid]);
 
 #pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon.x[i][tid] = p.x[i];
-        photon.k[i][tid] = p.k[i];
-        photon.dkdlam[i][tid] = p.dkdlam[i];
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon.x[i][tid] = p.x[i];
+            photon.k[i][tid] = p.k[i];
+            photon.dkdlam[i][tid] = p.dkdlam[i];
+        }
+        photon.e_0_s[tid] = p.e_0_s;
     }
-    photon.e_0_s[tid] = p.e_0_s;
 }
 
 static __global__ void interact_photon(const struct harm::Header *header,
@@ -1071,69 +1100,69 @@ static __global__ void interact_photon(const struct harm::Header *header,
                                        double *d_tau_scatt,
                                        double *d_tau_abs,
                                        double *bias) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
-    const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
-
     const double hbar = consts::hpl / (2.0 * CUDART_PI);
     const double d_tau_k = 2.0 * CUDART_PI * units->l_unit / (consts::me * consts::cl * consts::cl / hbar);
 
     __shared__ double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
-    if (photon_state[tid] != PhotonState::Initialized) {
-        return;
-    }
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
+        const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
 
-    interact_cond[tid] = (alpha_absi[tid] > 0.0 || alpha_scatti[tid] > 0.0 || fluid_n_e[tid] > 0.0);
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
 
-    if (!interact_cond[tid]) {
-        return;
-    }
+        interact_cond[tid] = (alpha_absi[tid] > 0.0 || alpha_scatti[tid] > 0.0 || fluid_n_e[tid] > 0.0);
 
-    cuda_harm::gcov_func(header, photon_x, g_cov[threadIdx.x]);
+        if (!interact_cond[tid]) {
+            continue;
+        }
 
-    harm::FluidParams fluid_params = cuda_harm::get_fluid_params(header,
-                                                                 units,
-                                                                 data.k_rho,
-                                                                 data.u,
-                                                                 data.u_1,
-                                                                 data.u_2,
-                                                                 data.u_3,
-                                                                 data.b_1,
-                                                                 data.b_2,
-                                                                 data.b_3,
-                                                                 photon_x,
-                                                                 g_cov[threadIdx.x]);
-    bool bound_flag = fluid_params.n_e == 0.0;
+        cuda_harm::gcov_func(header, photon_x, g_cov[threadIdx.x]);
 
-    if (!bound_flag) {
-        theta[tid] = cuda_radiation::bk_angle(
-            photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
-        nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
-    }
+        harm::FluidParams fluid_params = cuda_harm::get_fluid_params(header,
+                                                                     units,
+                                                                     data.k_rho,
+                                                                     data.u,
+                                                                     data.u_1,
+                                                                     data.u_2,
+                                                                     data.u_3,
+                                                                     data.b_1,
+                                                                     data.b_2,
+                                                                     data.b_3,
+                                                                     photon_x,
+                                                                     g_cov[threadIdx.x]);
+        bool bound_flag = fluid_params.n_e == 0.0;
 
-    if (bound_flag || (nu[tid] < 0.0)) {
-        d_tau_scatt[tid] = 0.5 * alpha_scatti[tid] * d_tau_k * step_size[tid];
-        d_tau_abs[tid] = 0.5 * alpha_absi[tid] * d_tau_k * step_size[tid];
-        alpha_scatti[tid] = 0.0;
-        alpha_absi[tid] = 0.0;
-        bias[tid] = 0.0;
-        bi[tid] = 0.0;
-    } else {
-        double alpha_scattf =
-            cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
-        d_tau_scatt[tid] = 0.5 * (alpha_scatti[tid] + alpha_scattf) * d_tau_k * step_size[tid];
-        alpha_scatti[tid] = alpha_scattf;
+        if (!bound_flag) {
+            theta[tid] = cuda_radiation::bk_angle(
+                photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
+            nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
+        }
 
-        double alpha_absf = cuda_radiation::alpha_inv_abs(
-            nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
-        d_tau_abs[tid] = 0.5 * (alpha_absi[tid] + alpha_absf) * d_tau_k * step_size[tid];
-        alpha_absi[tid] = alpha_absf;
+        if (bound_flag || (nu[tid] < 0.0)) {
+            d_tau_scatt[tid] = 0.5 * alpha_scatti[tid] * d_tau_k * step_size[tid];
+            d_tau_abs[tid] = 0.5 * alpha_absi[tid] * d_tau_k * step_size[tid];
+            alpha_scatti[tid] = 0.0;
+            alpha_absi[tid] = 0.0;
+            bias[tid] = 0.0;
+            bi[tid] = 0.0;
+        } else {
+            double alpha_scattf =
+                cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
+            d_tau_scatt[tid] = 0.5 * (alpha_scatti[tid] + alpha_scattf) * d_tau_k * step_size[tid];
+            alpha_scatti[tid] = alpha_scattf;
 
-        double bf = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
-        bias[tid] = 0.5 * (bi[tid] + bf);
-        bi[tid] = bf;
+            double alpha_absf = cuda_radiation::alpha_inv_abs(
+                nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
+            d_tau_abs[tid] = 0.5 * (alpha_absi[tid] + alpha_absf) * d_tau_k * step_size[tid];
+            alpha_absi[tid] = alpha_absf;
+
+            double bf = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
+            bias[tid] = 0.5 * (bi[tid] + bf);
+            bi[tid] = bf;
+        }
     }
 }
 
@@ -1160,137 +1189,136 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *rng_state,
                                          double *d_tau_scatt,
                                          double *d_tau_abs,
                                          double *bias) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
     double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        scatter_cond[tid] = false;
 
-    scatter_cond[tid] = false;
-
-    if (photon_state[tid] != PhotonState::Initialized || !interact_cond[tid]) {
-        return;
-    }
-
-    double x1 = -log(curand_uniform(&rng_state[tid]));
-
-    photon_p.w[tid] = photon.w[tid] / bias[tid];
-
-    if (bias[tid] * d_tau_scatt[tid] > x1 && photon_p.w[tid] > consts::weight_min) {
-        double frac = x1 / (bias[tid] * d_tau_scatt[tid]);
-
-        /* apply absorption until scattering event */
-        d_tau_abs[tid] *= frac;
-
-        if (d_tau_abs[tid] > 100) {
-            /* this photon has been absorbed before scattering */
-            photon_state[tid] = PhotonState::Empty;
-            return;
+        if (photon_state[tid] != PhotonState::Initialized || !interact_cond[tid]) {
+            continue;
         }
 
-        d_tau_scatt[tid] *= frac;
+        double x1 = -log(curand_uniform(&rng_state[tid]));
 
-        double d_tau = d_tau_abs[tid] + d_tau_scatt[tid];
+        photon_p.w[tid] = photon.w[tid] / bias[tid];
 
-        if (d_tau_abs[tid] < 1.0e-3) {
-            photon.w[tid] *= (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
-        } else {
-            photon.w[tid] *= exp(-d_tau);
-        }
+        if (bias[tid] * d_tau_scatt[tid] > x1 && photon_p.w[tid] > consts::weight_min) {
+            double frac = x1 / (bias[tid] * d_tau_scatt[tid]);
 
-        struct photon::Photon p = {
-            .x = {photon_2.x[0][tid], photon_2.x[1][tid], photon_2.x[2][tid], photon_2.x[3][tid]},
-            .k = {photon_2.k[0][tid], photon_2.k[1][tid], photon_2.k[2][tid], photon_2.k[3][tid]},
-            .dkdlam = {photon_2.dkdlam[0][tid],
-                       photon_2.dkdlam[1][tid],
-                       photon_2.dkdlam[2][tid],
-                       photon_2.dkdlam[3][tid]},
-            .e_0_s = photon_2.e_0_s[tid],
-        };
+            /* apply absorption until scattering event */
+            d_tau_abs[tid] *= frac;
 
-        push_photon(header, &p, step_size[tid] * frac);
-
-#pragma unroll
-        for (int i = 0; i < consts::n_dim; ++i) {
-            photon.x[i][tid] = p.x[i];
-            photon.k[i][tid] = p.k[i];
-            photon.dkdlam[i][tid] = p.dkdlam[i];
-        }
-        photon.e_0_s[tid] = p.e_0_s;
-
-        const double photon_x[4] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
-        const double photon_k[4] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
-
-        cuda_harm::gcov_func(header, photon_x, g_cov_[threadIdx.x]);
-
-        harm::FluidParams fluid_params_ = cuda_harm::get_fluid_params(header,
-                                                                      units,
-                                                                      data.k_rho,
-                                                                      data.u,
-                                                                      data.u_1,
-                                                                      data.u_2,
-                                                                      data.u_3,
-                                                                      data.b_1,
-                                                                      data.b_2,
-                                                                      data.b_3,
-                                                                      photon_x,
-                                                                      g_cov_[threadIdx.x]);
-
-        if (fluid_params_.n_e > 0.0) {
-            scatter_cond[tid] = true;
-
-            if (photon.k[0][tid] > 1.0e5 || photon.k[0][tid] < 0.0 || isnan(photon.k[0][tid]) ||
-                isnan(photon.k[1][tid]) || isnan(photon.k[3][tid])) {
-                photon.k[0][tid] = fabs(photon.k[0][tid]);
-                photon.w[tid] = 0.0;
-            }
-
-            if (photon.w[tid] < 1.0e-100) {
-                /* must have been a problem popping k back onto light cone */
+            if (d_tau_abs[tid] > 100) {
+                /* this photon has been absorbed before scattering */
                 photon_state[tid] = PhotonState::Empty;
-                return;
+                continue;
             }
+
+            d_tau_scatt[tid] *= frac;
+
+            double d_tau = d_tau_abs[tid] + d_tau_scatt[tid];
+
+            if (d_tau_abs[tid] < 1.0e-3) {
+                photon.w[tid] *= (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
+            } else {
+                photon.w[tid] *= exp(-d_tau);
+            }
+
+            struct photon::Photon p = {
+                .x = {photon_2.x[0][tid], photon_2.x[1][tid], photon_2.x[2][tid], photon_2.x[3][tid]},
+                .k = {photon_2.k[0][tid], photon_2.k[1][tid], photon_2.k[2][tid], photon_2.k[3][tid]},
+                .dkdlam = {photon_2.dkdlam[0][tid],
+                           photon_2.dkdlam[1][tid],
+                           photon_2.dkdlam[2][tid],
+                           photon_2.dkdlam[3][tid]},
+                .e_0_s = photon_2.e_0_s[tid],
+            };
+
+            push_photon(header, &p, step_size[tid] * frac);
 
 #pragma unroll
             for (int i = 0; i < consts::n_dim; ++i) {
-#pragma unroll
-                for (int j = 0; j < consts::n_dim; ++j) {
-                    g_cov[tid * consts::n_dim * consts::n_dim + i * consts::n_dim + j] = g_cov_[threadIdx.x][i][j];
-                }
+                photon.x[i][tid] = p.x[i];
+                photon.k[i][tid] = p.k[i];
+                photon.dkdlam[i][tid] = p.dkdlam[i];
             }
-            fluid_params[tid] = fluid_params_;
-        }
+            photon.e_0_s[tid] = p.e_0_s;
 
-        theta[tid] = cuda_radiation::bk_angle(
-            photon_x, photon_k, fluid_params_.u_cov, fluid_params_.b_cov, fluid_params_.b, units->b_unit);
-        nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params_.u_cov);
+            const double photon_x[4] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
+            const double photon_k[4] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
 
-        if (nu[tid] < 0.0) {
-            alpha_scatti[tid] = 0.0;
-            alpha_absi[tid] = 0.0;
+            cuda_harm::gcov_func(header, photon_x, g_cov_[threadIdx.x]);
+
+            harm::FluidParams fluid_params_ = cuda_harm::get_fluid_params(header,
+                                                                          units,
+                                                                          data.k_rho,
+                                                                          data.u,
+                                                                          data.u_1,
+                                                                          data.u_2,
+                                                                          data.u_3,
+                                                                          data.b_1,
+                                                                          data.b_2,
+                                                                          data.b_3,
+                                                                          photon_x,
+                                                                          g_cov_[threadIdx.x]);
+
+            if (fluid_params_.n_e > 0.0) {
+                scatter_cond[tid] = true;
+
+                if (photon.k[0][tid] > 1.0e5 || photon.k[0][tid] < 0.0 || isnan(photon.k[0][tid]) ||
+                    isnan(photon.k[1][tid]) || isnan(photon.k[3][tid])) {
+                    photon.k[0][tid] = fabs(photon.k[0][tid]);
+                    photon.w[tid] = 0.0;
+                }
+
+                if (photon.w[tid] < 1.0e-100) {
+                    /* must have been a problem popping k back onto light cone */
+                    photon_state[tid] = PhotonState::Empty;
+                    continue;
+                }
+
+#pragma unroll
+                for (int i = 0; i < consts::n_dim; ++i) {
+#pragma unroll
+                    for (int j = 0; j < consts::n_dim; ++j) {
+                        g_cov[tid * consts::n_dim * consts::n_dim + i * consts::n_dim + j] = g_cov_[threadIdx.x][i][j];
+                    }
+                }
+                fluid_params[tid] = fluid_params_;
+            }
+
+            theta[tid] = cuda_radiation::bk_angle(
+                photon_x, photon_k, fluid_params_.u_cov, fluid_params_.b_cov, fluid_params_.b, units->b_unit);
+            nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params_.u_cov);
+
+            if (nu[tid] < 0.0) {
+                alpha_scatti[tid] = 0.0;
+                alpha_absi[tid] = 0.0;
+            } else {
+                alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
+                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, tables.hotcross_table);
+                alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
+                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, theta[tid], tables.k2);
+            }
+            bi[tid] = bias_func(bias_norm, fluid_params_.theta_e, photon.w[tid]);
+
         } else {
-            alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
-                nu[tid], fluid_params_.theta_e, fluid_params_.n_e, tables.hotcross_table);
-            alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-                nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, theta[tid], tables.k2);
-        }
-        bi[tid] = bias_func(bias_norm, fluid_params_.theta_e, photon.w[tid]);
+            if (d_tau_abs[tid] > 100) {
+                /* this photon has been absorbed */
+                photon_state[tid] = PhotonState::Empty;
+                continue;
+            }
 
-    } else {
-        if (d_tau_abs[tid] > 100) {
-            /* this photon has been absorbed */
-            photon_state[tid] = PhotonState::Empty;
-            return;
+            double d_tau = d_tau_abs[tid] + d_tau_scatt[tid];
+            if (d_tau < 1.0e-3) {
+                photon.w[tid] *= (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
+            } else {
+                photon.w[tid] *= exp(-d_tau);
+            }
         }
 
-        double d_tau = d_tau_abs[tid] + d_tau_scatt[tid];
-        if (d_tau < 1.0e-3) {
-            photon.w[tid] *= (1.0 - d_tau / 24.0 * (24.0 - d_tau * (12.0 - d_tau * (4.0 - d_tau))));
-        } else {
-            photon.w[tid] *= exp(-d_tau);
-        }
+        photon.tau_abs[tid] += d_tau_abs[tid];
+        photon.tau_scatt[tid] += d_tau_scatt[tid];
     }
-
-    photon.tau_abs[tid] += d_tau_abs[tid];
-    photon.tau_scatt[tid] += d_tau_scatt[tid];
 }
 
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_state,
@@ -1301,107 +1329,107 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *rng_stat
                                             struct PhotonArray photon_p,
                                             struct harm::FluidParams *fluid_params,
                                             double *g_cov) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
     __shared__ double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
-    if ((photon_state[tid] != PhotonState::Initialized && photon_state[tid] != PhotonState::Tracked) ||
-        !scatter_cond[tid]) {
-        return;
-    }
-
-#pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-#pragma unroll
-        for (int j = 0; j < consts::n_dim; ++j) {
-            g_cov_[threadIdx.x][i][j] = g_cov[tid * consts::n_dim * consts::n_dim + i * consts::n_dim + j];
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if ((photon_state[tid] != PhotonState::Initialized && photon_state[tid] != PhotonState::Tracked) ||
+            !scatter_cond[tid]) {
+            continue;
         }
-    }
 
-    double b_hat_con[consts::n_dim];
-
-    if (fluid_params[tid].b > 0.0) {
+#pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
-            b_hat_con[i] = fluid_params[tid].b_con[i] / (fluid_params[tid].b / units->b_unit);
+#pragma unroll
+            for (int j = 0; j < consts::n_dim; ++j) {
+                g_cov_[threadIdx.x][i][j] = g_cov[tid * consts::n_dim * consts::n_dim + i * consts::n_dim + j];
+            }
         }
-    } else {
-        for (int i = 0; i < consts::n_dim; ++i) {
-            b_hat_con[i] = 0.0;
+
+        double b_hat_con[consts::n_dim];
+
+        if (fluid_params[tid].b > 0.0) {
+            for (int i = 0; i < consts::n_dim; ++i) {
+                b_hat_con[i] = fluid_params[tid].b_con[i] / (fluid_params[tid].b / units->b_unit);
+            }
+        } else {
+            for (int i = 0; i < consts::n_dim; ++i) {
+                b_hat_con[i] = 0.0;
+            }
+            b_hat_con[1] = 1.0;
         }
-        b_hat_con[1] = 1.0;
-    }
 
-    double e_con[consts::n_dim][consts::n_dim];
-    double e_cov[consts::n_dim][consts::n_dim];
+        double e_con[consts::n_dim][consts::n_dim];
+        double e_cov[consts::n_dim][consts::n_dim];
 
-    /* local tetrad */
-    cuda_tetrads::make_tetrad(fluid_params[tid].u_con, b_hat_con, g_cov_[threadIdx.x], e_con, e_cov);
+        /* local tetrad */
+        cuda_tetrads::make_tetrad(fluid_params[tid].u_con, b_hat_con, g_cov_[threadIdx.x], e_con, e_cov);
 
-    const double photon_k[4] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
-    double k_tetrad[consts::n_dim];
+        const double photon_k[4] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
+        double k_tetrad[consts::n_dim];
 
-    cuda_tetrads::coordinate_to_tetrad(e_cov, photon_k, k_tetrad);
+        cuda_tetrads::coordinate_to_tetrad(e_cov, photon_k, k_tetrad);
 
-    if (k_tetrad[0] > 1.0e5 || k_tetrad[0] < 0.0 || isnan(k_tetrad[1])) {
-        scatter_cond[tid] = false;
-        return;
-    }
+        if (k_tetrad[0] > 1.0e5 || k_tetrad[0] < 0.0 || isnan(k_tetrad[1])) {
+            scatter_cond[tid] = false;
+            continue;
+        }
 
-    double p[consts::n_dim];
-    cuda_proba::sample_electron_distr_p(&rng_state[tid], k_tetrad, p, fluid_params[tid].theta_e);
+        double p[consts::n_dim];
+        cuda_proba::sample_electron_distr_p(&rng_state[tid], k_tetrad, p, fluid_params[tid].theta_e);
 
-    double k_tetrad_p[consts::n_dim];
-    sample_scattered_photon(&rng_state[tid], k_tetrad, p, k_tetrad_p);
+        double k_tetrad_p[consts::n_dim];
+        sample_scattered_photon(&rng_state[tid], k_tetrad, p, k_tetrad_p);
 
-    double photon_p_k[4];
+        double photon_p_k[4];
 
-    cuda_tetrads::tetrad_to_coordinate(e_con, k_tetrad_p, photon_p_k);
+        cuda_tetrads::tetrad_to_coordinate(e_con, k_tetrad_p, photon_p_k);
 
 #pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon_p.k[i][tid] = photon_p_k[i];
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon_p.k[i][tid] = photon_p_k[i];
+        }
+
+        if (isnan(photon_p.k[1][tid])) {
+            photon_p.w[tid] = 0.0;
+            scatter_cond[tid] = false;
+            continue;
+        }
+
+        double tmp_k[consts::n_dim];
+        k_tetrad_p[0] *= -1.0;
+        cuda_tetrads::tetrad_to_coordinate(e_cov, k_tetrad_p, tmp_k);
+
+        photon_p.e[tid] = -tmp_k[0];
+        photon_p.e_0_s[tid] = -tmp_k[0];
+        photon_p.l[tid] = tmp_k[3];
+        photon_p.tau_abs[tid] = 0.0;
+        photon_p.tau_scatt[tid] = 0.0;
+        photon_p.b_0[tid] = fluid_params[tid].b;
+
+        photon_p.x1i[tid] = photon.x[1][tid];
+        photon_p.x2i[tid] = photon.x[2][tid];
+        photon_p.x[0][tid] = photon.x[0][tid];
+        photon_p.x[1][tid] = photon.x[1][tid];
+        photon_p.x[2][tid] = photon.x[2][tid];
+        photon_p.x[3][tid] = photon.x[3][tid];
+
+        photon_p.n_e_0[tid] = photon.n_e_0[tid];
+        photon_p.theta_e_0[tid] = photon.theta_e_0[tid];
+        photon_p.e_0[tid] = photon.e_0[tid];
+        photon_p.n_scatt[tid] = photon.n_scatt[tid] + 1;
     }
-
-    if (isnan(photon_p.k[1][tid])) {
-        photon_p.w[tid] = 0.0;
-        scatter_cond[tid] = false;
-        return;
-    }
-
-    double tmp_k[consts::n_dim];
-    k_tetrad_p[0] *= -1.0;
-    cuda_tetrads::tetrad_to_coordinate(e_cov, k_tetrad_p, tmp_k);
-
-    photon_p.e[tid] = -tmp_k[0];
-    photon_p.e_0_s[tid] = -tmp_k[0];
-    photon_p.l[tid] = tmp_k[3];
-    photon_p.tau_abs[tid] = 0.0;
-    photon_p.tau_scatt[tid] = 0.0;
-    photon_p.b_0[tid] = fluid_params[tid].b;
-
-    photon_p.x1i[tid] = photon.x[1][tid];
-    photon_p.x2i[tid] = photon.x[2][tid];
-    photon_p.x[0][tid] = photon.x[0][tid];
-    photon_p.x[1][tid] = photon.x[1][tid];
-    photon_p.x[2][tid] = photon.x[2][tid];
-    photon_p.x[3][tid] = photon.x[3][tid];
-
-    photon_p.n_e_0[tid] = photon.n_e_0[tid];
-    photon_p.theta_e_0[tid] = photon.theta_e_0[tid];
-    photon_p.e_0[tid] = photon.e_0[tid];
-    photon_p.n_scatt[tid] = photon.n_scatt[tid] + 1;
 }
 
 static __global__ void incr_check_n_step(int *n_step, enum PhotonState *photon_state) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
+        ++n_step[tid];
 
-    if (photon_state[tid] != PhotonState::Initialized) {
-        return;
-    }
-    ++n_step[tid];
-
-    if (n_step[tid] > consts::max_n_step) {
-        photon_state[tid] = PhotonState::Empty;
+        if (n_step[tid] > consts::max_n_step) {
+            photon_state[tid] = PhotonState::Empty;
+        }
     }
 }
 
@@ -1410,62 +1438,62 @@ static __global__ void record_super_photon(const struct harm::Header *header,
                                            enum PhotonState *photon_state,
                                            int *n_step,
                                            struct harm::Spectrum *spectrum) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
     const double x1_max = log(consts::r_max);
     const double l_e_0 = log(1.0e-12);
 
-    if (photon_state[tid] != PhotonState::Tracked) {
-        return;
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Tracked) {
+            continue;
+        }
+
+        photon_state[tid] = PhotonState::Empty;
+
+        /* record criterion */
+        if (photon.x[1][tid] <= x1_max || isnan(photon.w[tid]) || isnan(photon.e[tid])) {
+            continue;
+        }
+
+        atomic_max_double(&dev_max_tau_scatt, photon.tau_scatt[tid]);
+
+        double dx2 = (header->x_stop[2] - header->x_start[2]) / (2.0 * consts::n_th_bins);
+        int ix2;
+        if (photon.x[2][tid] < 0.5 * (header->x_start[2] + header->x_stop[2])) {
+            ix2 = static_cast<int>(photon.x[2][tid] / dx2);
+        } else {
+            ix2 = static_cast<int>((header->x_stop[2] - photon.x[2][tid]) / dx2);
+        }
+
+        if (ix2 < 0 || ix2 >= consts::n_th_bins) {
+            continue;
+        }
+
+        double l_e = log(photon.e[tid]);
+        int i_e = static_cast<int>((l_e - l_e_0) / consts::spectrum::d_l_e + 2.5) - 2;
+
+        if (i_e < 0 || i_e >= consts::n_e_bins) {
+            continue;
+        }
+
+        atomicAdd(&dev_n_super_photon_recorded, 1);
+        atomicAdd(&dev_n_super_photon_scatt, photon.n_scatt[tid]);
+
+        /* sum in photon */
+        const int idx = ix2 * consts::n_e_bins + i_e;
+
+        /* TODO: optimize it using reduction */
+        atomicAdd(&spectrum[idx].dn_dle, photon.w[tid]);
+        atomicAdd(&spectrum[idx].de_dle, photon.w[tid] * photon.e[tid]);
+        atomicAdd(&spectrum[idx].tau_abs, photon.w[tid] * photon.tau_abs[tid]);
+        atomicAdd(&spectrum[idx].tau_scatt, photon.w[tid] * photon.tau_scatt[tid]);
+        atomicAdd(&spectrum[idx].x1i_av, photon.w[tid] * photon.x1i[tid]);
+        atomicAdd(&spectrum[idx].x2i_sq, photon.w[tid] * (photon.x2i[tid] * photon.x2i[tid]));
+        atomicAdd(&spectrum[idx].x3f_sq, photon.w[tid] * (photon.x[3][tid] * photon.x[3][tid]));
+        atomicAdd(&spectrum[idx].ne_0, photon.w[tid] * (photon.n_e_0[tid]));
+        atomicAdd(&spectrum[idx].b_0, photon.w[tid] * (photon.b_0[tid]));
+        atomicAdd(&spectrum[idx].theta_e_0, photon.w[tid] * (photon.theta_e_0[tid]));
+        atomicAdd(&spectrum[idx].nscatt, photon.n_scatt[tid]);
+        atomicAdd(&spectrum[idx].nph, 1.0);
     }
-
-    photon_state[tid] = PhotonState::Empty;
-
-    /* record criterion */
-    if (photon.x[1][tid] <= x1_max || isnan(photon.w[tid]) || isnan(photon.e[tid])) {
-        return;
-    }
-
-    atomic_max_double(&dev_max_tau_scatt, photon.tau_scatt[tid]);
-
-    double dx2 = (header->x_stop[2] - header->x_start[2]) / (2.0 * consts::n_th_bins);
-    int ix2;
-    if (photon.x[2][tid] < 0.5 * (header->x_start[2] + header->x_stop[2])) {
-        ix2 = static_cast<int>(photon.x[2][tid] / dx2);
-    } else {
-        ix2 = static_cast<int>((header->x_stop[2] - photon.x[2][tid]) / dx2);
-    }
-
-    if (ix2 < 0 || ix2 >= consts::n_th_bins) {
-        return;
-    }
-
-    double l_e = log(photon.e[tid]);
-    int i_e = static_cast<int>((l_e - l_e_0) / consts::spectrum::d_l_e + 2.5) - 2;
-
-    if (i_e < 0 || i_e >= consts::n_e_bins) {
-        return;
-    }
-
-    atomicAdd(&dev_n_super_photon_recorded, 1);
-    atomicAdd(&dev_n_super_photon_scatt, photon.n_scatt[tid]);
-
-    /* sum in photon */
-    const int idx = ix2 * consts::n_e_bins + i_e;
-
-    /* TODO: optimize it using reduction */
-    atomicAdd(&spectrum[idx].dn_dle, photon.w[tid]);
-    atomicAdd(&spectrum[idx].de_dle, photon.w[tid] * photon.e[tid]);
-    atomicAdd(&spectrum[idx].tau_abs, photon.w[tid] * photon.tau_abs[tid]);
-    atomicAdd(&spectrum[idx].tau_scatt, photon.w[tid] * photon.tau_scatt[tid]);
-    atomicAdd(&spectrum[idx].x1i_av, photon.w[tid] * photon.x1i[tid]);
-    atomicAdd(&spectrum[idx].x2i_sq, photon.w[tid] * (photon.x2i[tid] * photon.x2i[tid]));
-    atomicAdd(&spectrum[idx].x3f_sq, photon.w[tid] * (photon.x[3][tid] * photon.x[3][tid]));
-    atomicAdd(&spectrum[idx].ne_0, photon.w[tid] * (photon.n_e_0[tid]));
-    atomicAdd(&spectrum[idx].b_0, photon.w[tid] * (photon.b_0[tid]));
-    atomicAdd(&spectrum[idx].theta_e_0, photon.w[tid] * (photon.theta_e_0[tid]));
-    atomicAdd(&spectrum[idx].nscatt, photon.n_scatt[tid]);
-    atomicAdd(&spectrum[idx].nph, 1.0);
 }
 
 static __device__ double bias_func(double bias_norm, double t_e, double w) {
