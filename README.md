@@ -76,13 +76,14 @@ Hardware:
 - RAM: 2x32 GB (4800 Mhz)
 - GPU: RTX 3060 12 GB
 
-| Version                                                                           | Other parameters     | Photon rate \[1/s\] | Total duration \[s\] |
-| --------------------------------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
-| [grmonty](https://github.com/pseudotensor/grmonty)                                | `OMP_NUM_THREADS=1`  | 59743               | 272.51               |
-| [grmonty](https://github.com/pseudotensor/grmonty)                                | `OMP_NUM_THREADS=32` | 289866              | 55.36                |
-| [v0.0.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.0.1) (CPU-only) |                      | 51429               | 317.02               |
-| [v0.1.0](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.0)            |                      | 65119               | 241.84               |
-| [v0.1.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.1)            |                      | 137939              | 114.95               |
+| Version                                                                | Other parameters / notes | Photon rate \[1/s\] | Total duration \[s\] |
+| ---------------------------------------------------------------------- | ------------------------ | ------------------- | -------------------- |
+| [grmonty](https://github.com/pseudotensor/grmonty)                     | `OMP_NUM_THREADS=1`      | 59743               | 272.51               |
+| [grmonty](https://github.com/pseudotensor/grmonty)                     | `OMP_NUM_THREADS=32`     | 289866              | 55.36                |
+| [v0.0.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.0.1) | CPU only                 | 51429               | 317.02               |
+| [v0.1.0](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.0) |                          | 65119               | 241.84               |
+| [v0.1.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.1) |                          | 137939              | 114.95               |
+| [v0.1.2](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.2) |                          | 246538              | 64.91                |
 
 ## Development
 
