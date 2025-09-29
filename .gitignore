@@ -1,3 +1,5 @@
 /MODULE.bazel.lock
 /bazel-*
 /coverage_html
+*.nsys-rep
+*.ncu-rep
