@@ -618,10 +618,18 @@ void track_super_photons(double bias_norm,
     bool all_done = false;
 
     cudaStream_t streams[n_streams];
+    cudaEvent_t scattered_photons_cpy_dtoh[n_streams];
+    cudaEvent_t scattered_photons_enq[n_streams];
     int stream_idx = 0;
 
     for (auto &stream : streams) {
         cudaStreamCreate(&stream);
+    }
+    for (auto &event : scattered_photons_cpy_dtoh) {
+        cudaEventCreate(&event);
+    }
+    for (auto &event : scattered_photons_enq) {
+        cudaEventCreate(&event);
     }
 
     for (int i = 0; i < n_streams; ++i) {
@@ -634,8 +642,6 @@ void track_super_photons(double bias_norm,
         if (stop_sem.try_acquire()) {
             queue_empty = true;
         }
-
-        cudaStreamSynchronize(streams[stream_idx]);
 
         /* feed photons into array */
         all_done = true;
@@ -836,6 +842,8 @@ void track_super_photons(double bias_norm,
                                                                               dev_fluid_params[stream_idx],
                                                                               dev_g_cov[stream_idx]);
 
+        cudaEventSynchronize(scattered_photons_enq[stream_idx]);
+
         for (int i = 0; i < consts::n_dim; ++i) {
             gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].x[i],
                                       dev_photon_p[stream_idx].x[i],
@@ -895,6 +903,8 @@ void track_super_photons(double bias_norm,
                                   cudaMemcpyDeviceToHost,
                                   streams[stream_idx]));
 
+        gpuErrchk(cudaEventRecord(scattered_photons_cpy_dtoh[stream_idx], streams[stream_idx]));
+
         /* increment and check step num */
         incr_check_n_step<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_n_step[stream_idx],
                                                                            dev_photon_state[stream_idx]);
@@ -913,7 +923,7 @@ void track_super_photons(double bias_norm,
         }
 
         unsigned int prev_stream_idx = (stream_idx + n_streams - 1) % n_streams;
-        cudaStreamSynchronize(streams[prev_stream_idx]);
+        cudaEventSynchronize(scattered_photons_cpy_dtoh[prev_stream_idx]);
 
         for (int i = 0; i < n_photons; ++i) {
             if (scatter_cond[prev_stream_idx][i]) {
@@ -936,12 +946,20 @@ void track_super_photons(double bias_norm,
             }
         }
 
+        gpuErrchk(cudaEventRecord(scattered_photons_enq[stream_idx], streams[stream_idx]));
+
         ++stream_idx;
         stream_idx %= n_streams;
     }
 
     for (auto &stream : streams) {
         cudaStreamDestroy(stream);
+    }
+    for (auto &event : scattered_photons_cpy_dtoh) {
+        cudaEventDestroy(event);
+    }
+    for (auto &event : scattered_photons_enq) {
+        cudaEventDestroy(event);
     }
 
     gpuErrchk(cudaMemcpy(
