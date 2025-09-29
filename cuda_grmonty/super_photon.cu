@@ -510,10 +510,10 @@ void track_super_photons(double bias_norm,
     const int grid_dim = consts::cuda::grid_dim;
     const int block_dim = consts::cuda::block_dim;
 
-    const unsigned int n_streams = 2;
+    constexpr unsigned int n_streams = 2;
 
     struct PhotonArray photon_new[n_streams];
-    enum PhotonState photon_state[n_streams][n_photons];
+    enum PhotonState *photon_state[n_streams];
 
     curandStatePhilox4_32_10_t *dev_rng_state[n_streams];
 
@@ -553,6 +553,8 @@ void track_super_photons(double bias_norm,
     for (int i = 0; i < n_streams; ++i) {
         gpuErrchk(cudaMalloc((void **)&dev_rng_state[i], n_photons * sizeof(curandStatePhilox4_32_10_t)));
 
+        gpuErrchk(cudaMallocHost((void **)&photon_state[i], n_photons * sizeof(enum PhotonState)));
+
         for (int j = 0; j < consts::n_dim; ++j) {
             photon_new[i].x[j] = new double[n_photons];
             photon_new[i].k[j] = new double[n_photons];
@@ -566,7 +568,9 @@ void track_super_photons(double bias_norm,
         photon_new[i].e_0 = new double[n_photons];
         photon_new[i].n_scatt = new int[n_photons];
 
-        std::fill(std::begin(photon_state[i]), std::end(photon_state[i]), PhotonState::Empty);
+        for (int j = 0; j < n_photons; ++j) {
+            photon_state[i][j] = PhotonState::Empty;
+        }
 
         gpuErrchk(cudaMallocHost((void **)&scatter_cond[i], n_photons * sizeof(bool)));
 
@@ -969,6 +973,8 @@ void track_super_photons(double bias_norm,
 
     for (int i = 0; i < n_streams; ++i) {
         gpuErrchk(cudaFree(dev_rng_state[i]));
+
+        gpuErrchk(cudaFreeHost(photon_state[i]));
 
         for (int j = 0; j < consts::n_dim; ++j) {
             delete[] photon_new[i].x[j];
