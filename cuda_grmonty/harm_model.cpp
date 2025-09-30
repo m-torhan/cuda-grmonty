@@ -26,10 +26,10 @@
 #include "cuda_grmonty/monty_rand.hpp"
 #include "cuda_grmonty/ndarray.hpp"
 #include "cuda_grmonty/photon.hpp"
-#include "cuda_grmonty/photon_queue.hpp"
 #include "cuda_grmonty/proba.hpp"
 #include "cuda_grmonty/radiation.hpp"
 #include "cuda_grmonty/tetrads.hpp"
+#include "cuda_grmonty/utils.hpp"
 
 #ifdef CUDA
 #include "cuda_grmonty/super_photon.cuh"
@@ -342,7 +342,7 @@ void HARMModel::run_simulation() {
 #ifdef CUDA
     cuda_super_photon::alloc_memory(header_, data_, units_, hotcross_table_, f_, k2_);
 
-    photon::PhotonQueue photon_queue(consts::cuda::n_photons * 2);
+    utils::ConcurrentQueue<photon::Photon> photon_queue(consts::cuda::n_photons * 2);
     std::binary_semaphore done_sem{0};
 
     std::thread make_super_photon_thread(
@@ -790,7 +790,8 @@ std::tuple<struct photon::Photon, bool> HARMModel::make_super_photon() {
     return {photon, quit};
 }
 
-void HARMModel::make_super_photon_async(photon::PhotonQueue &photon_queue, std::binary_semaphore &done_sem) {
+void HARMModel::make_super_photon_async(utils::ConcurrentQueue<photon::Photon> &photon_queue,
+                                        std::binary_semaphore &done_sem) {
     auto start_iter = std::chrono::system_clock::now();
     int n_rate = 0;
 

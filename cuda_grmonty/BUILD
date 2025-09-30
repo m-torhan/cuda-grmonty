@@ -26,6 +26,11 @@ cuda_library(
 )
 
 cc_library(
+    name = "utils",
+    hdrs = ["utils.hpp"],
+)
+
+cc_library(
     name = "consts",
     hdrs = ["consts.hpp"],
 )
@@ -47,15 +52,6 @@ cuda_library(
         ":cuda_utils",
     ],
     target_compatible_with = requires_cuda(),
-)
-
-cc_library(
-    name = "photon_queue",
-    srcs = ["photon_queue.cpp"],
-    hdrs = ["photon_queue.hpp"],
-    deps = [
-        ":photon",
-    ],
 )
 
 cc_library(
@@ -256,7 +252,7 @@ cuda_library(
         ":cuda_utils",
         ":harm_data",
         ":photon",
-        ":photon_queue",
+        ":utils",
     ],
     target_compatible_with = requires_cuda(),
 )
@@ -273,7 +269,7 @@ cc_library(
         ":monty_rand",
         ":ndarray",
         ":photon",
-        ":photon_queue",
+        ":utils",
         ":proba",
         ":radiation",
         ":tetrads",

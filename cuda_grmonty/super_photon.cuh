@@ -10,7 +10,7 @@
 
 #include "cuda_grmonty/harm_data.hpp"
 #include "cuda_grmonty/photon.hpp"
-#include "cuda_grmonty/photon_queue.hpp"
+#include "cuda_grmonty/utils.hpp"
 
 namespace cuda_super_photon {
 
@@ -54,7 +54,7 @@ void free_memory();
  */
 void track_super_photons(double bias_norm,
                          double max_tau_scatt,
-                         photon::PhotonQueue &photon_queue,
+                         utils::ConcurrentQueue<photon::Photon> &photon_queue,
                          std::binary_semaphore &stop_sem,
                          harm::Spectrum (&spectrum)[consts::n_th_bins][consts::n_e_bins],
                          uint64_t &n_super_photon_recorded,

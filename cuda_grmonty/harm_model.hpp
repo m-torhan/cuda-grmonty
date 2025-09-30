@@ -15,7 +15,7 @@
 #include "cuda_grmonty/harm_data.hpp"
 #include "cuda_grmonty/ndarray.hpp"
 #include "cuda_grmonty/photon.hpp"
-#include "cuda_grmonty/photon_queue.hpp"
+#include "cuda_grmonty/utils.hpp"
 
 namespace harm {
 
@@ -317,10 +317,10 @@ private:
      *
      * @details Samples a photon and enqueues it into the provided photon queue, signaling the semaphore once complete.
      *
-     * @param[out] photon_queue Queue into which the photon is placed.
-     * @param[out] done_sem     Binary semaphore used to signal completion of photon generation.
+     * @param photon_queue Queue into which the photon is placed.
+     * @param done_sem     Binary semaphore used to signal completion of photon generation.
      */
-    void make_super_photon_async(photon::PhotonQueue &photon_queue, std::binary_semaphore &done_sem);
+    void make_super_photon_async(utils::ConcurrentQueue<photon::Photon> &photon_queue, std::binary_semaphore &done_sem);
 
     /**
      * @brief Propagates a superphoton through the simulation.
