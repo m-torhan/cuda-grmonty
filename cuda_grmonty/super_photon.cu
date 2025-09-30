@@ -31,7 +31,7 @@ const int n_photons = consts::cuda::n_photons;
 /**
  * @brief Maximum scattering optical depth per photon (device).
  */
-__device__ double dev_max_tau_scatt;
+__device__ double dev_max_tau_scatt = 0.0;
 
 /**
  * @brief Number of super-photons recorded (device).
@@ -2013,9 +2013,12 @@ boost(const double (&v)[consts::n_dim], const double (&u)[consts::n_dim], double
 }
 
 static __device__ double atomic_max_double(double *addr, double val) {
-    uint32_t *addr_as_ull = (uint32_t *)addr;
-    uint32_t old = *addr_as_ull;
-    uint32_t assumed;
+    /* NOLINTBEGIN */
+    unsigned long long int *addr_as_ull = (unsigned long long int *)addr;
+
+    unsigned long long int old = *addr_as_ull;
+    unsigned long long int assumed;
+    /* NOLINTEND */
 
     do {
         assumed = old;
