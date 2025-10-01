@@ -84,6 +84,7 @@ Hardware:
 | [v0.1.0](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.0) |                          | 65119               | 241.84               |
 | [v0.1.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.1) |                          | 137939              | 114.95               |
 | [v0.1.2](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.2) |                          | 246538              | 64.91                |
+| [v0.1.3](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.3) |                          | 307186              | 52.41                |
 
 ## Development
 
