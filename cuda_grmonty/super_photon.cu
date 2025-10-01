@@ -9,6 +9,7 @@
 #include <math_constants.h>
 
 #include <cstdio>
+#include <queue>
 #include <semaphore>
 #include <tuple>
 
@@ -503,7 +504,7 @@ void free_memory() {
 
 void track_super_photons(double bias_norm,
                          double max_tau_scatt,
-                         utils::ConcurrentQueue<photon::Photon> &photon_queue,
+                         utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
                          std::binary_semaphore &stop_sem,
                          harm::Spectrum (&spectrum)[consts::n_th_bins][consts::n_e_bins],
                          uint64_t &n_super_photon_recorded,
@@ -564,8 +565,8 @@ void track_super_photons(double bias_norm,
         photon_new[i].e = new double[n_photons];
         photon_new[i].l = new double[n_photons];
         photon_new[i].n_e_0 = new double[n_photons];
-        photon_new[i].b_0 = new double[n_photons];
         photon_new[i].theta_e_0 = new double[n_photons];
+        photon_new[i].b_0 = new double[n_photons];
         photon_new[i].e_0 = new double[n_photons];
         photon_new[i].n_scatt = new int[n_photons];
 
@@ -643,6 +644,8 @@ void track_super_photons(double bias_norm,
 
     gpuErrchk(cudaDeviceSynchronize());
 
+    std::queue<photon::InitPhoton> buffer;
+
     while (true) {
         if (stop_sem.try_acquire()) {
             queue_empty = true;
@@ -651,9 +654,12 @@ void track_super_photons(double bias_norm,
         /* feed photons into array */
         all_done = true;
         if (n_iter % 7 == 0) {
+            photon_queue.dequeue_n(buffer, consts::cuda::n_photons - buffer.size());
+
             for (int i = 0; i < n_photons; ++i) {
-                if (photon_state[stream_idx][i] == PhotonState::Empty && !photon_queue.empty()) {
-                    photon::Photon p = photon_queue.dequeue();
+                if (photon_state[stream_idx][i] == PhotonState::Empty && !buffer.empty()) {
+                    photon::InitPhoton p = buffer.front();
+                    buffer.pop();
                     for (int j = 0; j < consts::n_dim; ++j) {
                         photon_new[stream_idx].x[j][i] = p.x[j];
                         photon_new[stream_idx].k[j][i] = p.k[j];
@@ -932,7 +938,7 @@ void track_super_photons(double bias_norm,
 
         for (int i = 0; i < n_photons; ++i) {
             if (scatter_cond[prev_stream_idx][i]) {
-                photon::Photon p;
+                photon::InitPhoton p;
 
                 for (int j = 0; j < consts::n_dim; ++j) {
                     p.x[j] = photon_p[prev_stream_idx].x[j][i];
@@ -1057,7 +1063,6 @@ load_validate_photon(struct PhotonArray photon, struct PhotonArray photon_new, e
         photon.tau_abs[tid] = 0.0;
         photon.x1i[tid] = photon_new.x[1][tid];
         photon.x2i[tid] = photon_new.x[2][tid];
-        photon.n_scatt[tid] = 0;
         photon.n_e_0[tid] = photon_new.n_e_0[tid];
         photon.b_0[tid] = photon_new.b_0[tid];
         photon.theta_e_0[tid] = photon_new.theta_e_0[tid];

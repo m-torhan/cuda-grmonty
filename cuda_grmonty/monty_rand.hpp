@@ -20,6 +20,15 @@ void init(int seed);
  *
  * @return Random double value in [0, 1).
  */
-double rand();
+double uniform();
+
+/**
+ * @brief Generate a random number from a chi-squared distribution.
+ *
+ * @param dof Degrees of freedom of the chi-squared distribution (must be > 0).
+ *
+ * @return Random double value drawn from a chi-squared distribution.
+ */
+double chi_sq(int dof);
 
 }; /* namespace monty_rand */

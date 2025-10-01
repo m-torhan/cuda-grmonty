@@ -50,6 +50,26 @@ public:
     }
 
     /**
+     * @brief Enqueue a objects from queue into the queue.
+     *
+     * Might increase queue size to max_size + in_q.size() - 1.
+     *
+     * @param in_q Queue of objects to enqueue.
+     */
+    void enqueue_q(std::queue<T> &in_q) {
+        std::unique_lock<std::mutex> lock(m_);
+        while (q_.size() >= max_size_) {
+            dequeue_cv_.wait(lock);
+        }
+
+        while (!in_q.empty()) {
+            q_.push(in_q.front());
+            in_q.pop();
+        }
+        enqueue_cv_.notify_one();
+    }
+
+    /**
      * @brief Force enqueue a object into the queue.
      *
      * Adds object regardless of queue capacity (may overwrite or bypass limit).
@@ -79,6 +99,26 @@ public:
         q_.pop();
         dequeue_cv_.notify_one();
         return object;
+    }
+
+    /**
+     * @brief Dequeue up to n objects from the queue into provided queue.
+     *
+     * @param out_q Queue to which the elements are enqueued.
+     * @param n     Maxiumum number of elements to dequeue.
+     *
+     * @return Number of retrieved elements.
+     */
+    int dequeue_n(std::queue<T> &out_q, int n) {
+        std::lock_guard<std::mutex> lock(m_);
+        int ret = 0;
+        while (!q_.empty() && ret < n) {
+            out_q.push(q_.front());
+            q_.pop();
+            ++ret;
+        }
+        dequeue_cv_.notify_one();
+        return ret;
     }
 
     /**

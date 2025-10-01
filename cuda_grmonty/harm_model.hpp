@@ -291,7 +291,7 @@ private:
      *
      * @return Photon sampled with initial position, wavevector, and weight consistent with zone conditions.
      */
-    struct photon::Photon sample_zone_photon(struct Zone &zone);
+    struct photon::InitPhoton sample_zone_photon(struct Zone &zone);
 
     /**
      * @brief Computes linear interpolation weight for frequency nu.
@@ -310,7 +310,12 @@ private:
      *
      * @return Tuple containing (Photon, success flag).
      */
-    std::tuple<struct photon::Photon, bool> make_super_photon();
+    std::tuple<struct photon::InitPhoton, bool> make_super_photon();
+
+    void make_super_photon_thread(unsigned int worked_id,
+                                  utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
+                                  utils::ConcurrentQueue<struct Zone> &work_queue,
+                                  std::atomic<int> &n_rate);
 
     /**
      * @brief Asynchronously generates a new superphoton.
@@ -320,7 +325,8 @@ private:
      * @param photon_queue Queue into which the photon is placed.
      * @param done_sem     Binary semaphore used to signal completion of photon generation.
      */
-    void make_super_photon_async(utils::ConcurrentQueue<photon::Photon> &photon_queue, std::binary_semaphore &done_sem);
+    void make_super_photon_async(utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
+                                 std::binary_semaphore &done_sem);
 
     /**
      * @brief Propagates a superphoton through the simulation.

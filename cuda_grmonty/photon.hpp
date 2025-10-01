@@ -35,4 +35,20 @@ struct Photon {
     int n_scatt;                  /* Number of scatterings experienced by the photon. */
 };
 
+/**
+ * @brief Reduced Photon struct including only the fields that are initialized during photon creation.
+ */
+struct InitPhoton {
+    double x[consts::n_dim];
+    double k[consts::n_dim];
+    double w;
+    double e;
+    double l;
+    double n_e_0;
+    double theta_e_0;
+    double b_0;
+    double e_0;
+    int n_scatt;
+};
+
 }; /* namespace photon */

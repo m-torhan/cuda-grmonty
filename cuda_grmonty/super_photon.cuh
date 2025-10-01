@@ -54,7 +54,7 @@ void free_memory();
  */
 void track_super_photons(double bias_norm,
                          double max_tau_scatt,
-                         utils::ConcurrentQueue<photon::Photon> &photon_queue,
+                         utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
                          std::binary_semaphore &stop_sem,
                          harm::Spectrum (&spectrum)[consts::n_th_bins][consts::n_e_bins],
                          uint64_t &n_super_photon_recorded,

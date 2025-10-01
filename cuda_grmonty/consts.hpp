@@ -11,6 +11,8 @@
 
 namespace consts {
 
+constexpr int rng_seed = 123; /* RNG seed for reproducibility */
+
 /* Dimensional and primitive variable counts. */
 constexpr int n_dim = 4;  /* Number of spacetime dimensions (t, r, θ, φ). */
 constexpr int n_prim = 8; /* Number of primitive fluid variables. */
@@ -164,6 +166,7 @@ constexpr int grid_dim = 128;                          /* Grid dimension */
 constexpr int block_dim = 128;                         /* Block dimension */
 constexpr int threads_per_grid = block_dim * grid_dim; /* Total number of threads per grid */
 constexpr int n_photons = threads_per_grid * 1;        /* Number of photons processed at once */
+constexpr int make_photon_n_workers = 4;               /* Number of threads for photons creation */
 
 } /* namespace cuda */
 

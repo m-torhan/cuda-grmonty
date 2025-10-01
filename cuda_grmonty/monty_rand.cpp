@@ -16,14 +16,18 @@ namespace monty_rand {
  * A globally accessible instance of std::mt19937 used for deterministic and reproducible random number generation
  * across Monte Carlo routines.
  */
-static std::mt19937 rd;
+thread_local static std::mt19937 rd;
 
 void init(int seed) { rd = std::mt19937(seed); }
 
-double rand() {
+double uniform() {
     std::uniform_real_distribution<double> dist(0, 1);
     return dist(rd);
-    // return 0.1;
+}
+
+double chi_sq(int dof) {
+    std::chi_squared_distribution<double> chi_sq(dof);
+    return chi_sq(rd);
 }
 
 }; /* namespace monty_rand */

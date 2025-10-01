@@ -11,6 +11,7 @@
 #include "absl/flags/parse.h"
 #include "spdlog/spdlog.h"
 
+#include "cuda_grmonty/consts.hpp"
 #include "cuda_grmonty/harm_model.hpp"
 #include "cuda_grmonty/monty_rand.hpp"
 #include "cuda_grmonty/parse_verbosity.hpp"
@@ -45,7 +46,7 @@ int main(int argc, char *argv[]) {
 
     harm_model.init();
 
-    monty_rand::init(123);
+    monty_rand::init(consts::rng_seed);
 
     harm_model.run_simulation();
 

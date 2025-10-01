@@ -54,7 +54,7 @@ void sample_electron_distr_p(const double (&k)[consts::n_dim], double (&p)[const
                                                   (k_ * k_ - 2.0 * k_ - 2.0) / (2.0 * k_) * std::log(1.0 + 2.0 * k_));
         }
 
-        x1 = monty_rand::rand();
+        x1 = monty_rand::uniform();
 
         ++sample_cnt;
 
@@ -94,7 +94,7 @@ void sample_electron_distr_p(const double (&k)[consts::n_dim], double (&p)[const
     double v2z = v0x * v1y - v0y * v1x;
 
     /* resolve new momentum vector along unit vectors and create a four-vector $p$ */
-    double phi = monty_rand::rand() * 2.0 * std::numbers::pi; /* orient uniformly */
+    double phi = monty_rand::uniform() * 2.0 * std::numbers::pi; /* orient uniformly */
     double s_phi = std::sin(phi);
     double c_phi = std::cos(phi);
 
@@ -121,8 +121,6 @@ std::tuple<double, double> sample_beta_distr(double theta_e) {
 }
 
 double sample_y_distr(double theta_e) {
-    static std::mt19937 rd(123);
-
     double pi_3 = std::sqrt(std::numbers::pi) / 4.0;
     double pi_4 = std::sqrt(0.5 * theta_e) / 2.0;
     double pi_5 = 3.0 * std::sqrt(std::numbers::pi) * theta_e / 8.0;
@@ -140,7 +138,7 @@ double sample_y_distr(double theta_e) {
     double prob;
 
     do {
-        double x1 = monty_rand::rand();
+        double x1 = monty_rand::uniform();
         int dof;
 
         if (x1 < pi_3) {
@@ -153,12 +151,11 @@ double sample_y_distr(double theta_e) {
             dof = 6;
         }
 
-        std::chi_squared_distribution<double> chi_sq(dof);
-        double x = chi_sq(rd);
+        double x = monty_rand::chi_sq(dof);
 
         y = std::sqrt(x / 2.0);
 
-        x2 = monty_rand::rand();
+        x2 = monty_rand::uniform();
         double num = std::sqrt(1.0 + 0.5 * theta_e * y * y);
         double den = (1.0 + y * std::sqrt(0.5 * theta_e));
 
@@ -169,7 +166,7 @@ double sample_y_distr(double theta_e) {
 }
 
 double sample_mu_distr(double beta_e) {
-    double x1 = monty_rand::rand();
+    double x1 = monty_rand::uniform();
     double det = 1.0 + 2.0 * beta_e + beta_e * beta_e - 4.0 * beta_e * x1;
     return (1.0 - std::sqrt(det)) / beta_e;
 }
@@ -182,10 +179,10 @@ double sample_klein_nishina(double k0) {
     double k0p_tent;
 
     do {
-        k0p_tent = k0pmin + (k0pmax - k0pmin) * monty_rand::rand();
+        k0p_tent = k0pmin + (k0pmax - k0pmin) * monty_rand::uniform();
 
         x1 = 2.0 * (1.0 + 2.0 * k0 + 2.0 * k0 * k0) / (k0 * k0 * (1.0 + 2.0 * k0));
-        x1 *= monty_rand::rand();
+        x1 *= monty_rand::uniform();
     } while (x1 >= klein_nishina(k0, k0p_tent));
 
     return k0p_tent;
@@ -195,16 +192,16 @@ double sample_thomson() {
     double x1, x2;
 
     do {
-        x1 = 2.0 * monty_rand::rand() - 1.0;
-        x2 = (3.0 / 4.0) * monty_rand::rand();
+        x1 = 2.0 * monty_rand::uniform() - 1.0;
+        x2 = (3.0 / 4.0) * monty_rand::uniform();
     } while (x2 >= (3.0 / 8.0) * (1.0 + x1 * x1));
 
     return x1;
 }
 
 std::tuple<double, double, double> sample_rand_dir() {
-    double z = monty_rand::rand() * 2.0 - 1.0;
-    double phi = monty_rand::rand() * 2.0 * std::numbers::pi;
+    double z = monty_rand::uniform() * 2.0 - 1.0;
+    double phi = monty_rand::uniform() * 2.0 * std::numbers::pi;
 
     double x = std::sqrt(1.0 - z * z) * std::cos(phi);
     double y = std::sqrt(1.0 - z * z) * std::sin(phi);

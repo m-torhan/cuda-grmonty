@@ -116,11 +116,11 @@ struct FluidParams {
  * @brief Monte Carlo sampling zone definition.
  */
 struct Zone {
-    int x_1;        /* Grid index in x1 direction */
-    int x_2;        /* Grid index in x2 direction */
-    int num_to_gen; /* Number of superphotons to generate */
-    double dn_max;  /* Maximum differential number */
-    bool quit_flag; /* Quit condition flag */
+    int x_1;           /* Grid index in x1 direction */
+    int x_2;           /* Grid index in x2 direction */
+    int num_to_gen;    /* Number of superphotons to generate */
+    double dn_max;     /* Maximum differential number */
+    bool first_photon; /* First photon flag */
 };
 
 /**

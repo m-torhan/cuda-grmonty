@@ -5,16 +5,19 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
+#include <queue>
 #include <semaphore>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <tuple>
+#include <vector>
 
 #include "spdlog/spdlog.h"
 
@@ -342,7 +345,7 @@ void HARMModel::run_simulation() {
 #ifdef CUDA
     cuda_super_photon::alloc_memory(header_, data_, units_, hotcross_table_, f_, k2_);
 
-    utils::ConcurrentQueue<photon::Photon> photon_queue(consts::cuda::n_photons * 2);
+    utils::ConcurrentQueue<photon::InitPhoton> photon_queue(consts::cuda::n_photons * 4);
     std::binary_semaphore done_sem{0};
 
     std::thread make_super_photon_thread(
@@ -350,8 +353,10 @@ void HARMModel::run_simulation() {
 
     cuda_super_photon::track_super_photons(
         bias_norm_, max_tau_scatt_, photon_queue, done_sem, spectrum_, n_super_photon_recorded_, n_super_photon_scatt_);
+    spdlog::debug("Track done");
 
     make_super_photon_thread.join();
+    spdlog::debug("Master thread joined");
 
     cuda_super_photon::free_memory();
 #else  /* CUDA */
@@ -359,11 +364,31 @@ void HARMModel::run_simulation() {
     auto start_iter = start;
 
     while (true) {
-        auto [photon, quit] = make_super_photon();
+        auto [init_photon, quit] = make_super_photon();
 
         if (quit) {
             break;
         }
+
+        photon::Photon photon;
+
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon.x[i] = init_photon.x[i];
+            photon.k[i] = init_photon.k[i];
+        }
+        photon.w = init_photon.w;
+        photon.e = init_photon.e;
+        photon.e_0 = init_photon.e_0;
+        photon.e_0_s = init_photon.e;
+        photon.l = init_photon.l;
+        photon.tau_scatt = 0.0;
+        photon.tau_abs = 0.0;
+        photon.x1i = init_photon.x[1];
+        photon.x2i = init_photon.x[2];
+        photon.n_e_0 = init_photon.n_e_0;
+        photon.b_0 = init_photon.b_0;
+        photon.theta_e_0 = init_photon.theta_e_0;
+        photon.n_scatt = 0;
 
         track_super_photon(photon);
 
@@ -646,7 +671,7 @@ struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
 }
 
 struct Zone HARMModel::get_zone() {
-    struct Zone zone = {.quit_flag = true};
+    struct Zone zone = {.first_photon = true};
     int num_to_gen;
 
     ++zone_x_2_;
@@ -665,7 +690,7 @@ struct Zone HARMModel::get_zone() {
 
     zone.dn_max = dn_max;
 
-    if (std::fmod(d_num_to_gen, 1.0) > monty_rand::rand()) {
+    if (std::fmod(d_num_to_gen, 1.0) > monty_rand::uniform()) {
         num_to_gen = static_cast<int>(d_num_to_gen) + 1;
     } else {
         num_to_gen = static_cast<int>(d_num_to_gen);
@@ -678,52 +703,19 @@ struct Zone HARMModel::get_zone() {
     return zone;
 }
 
-struct photon::Photon HARMModel::sample_zone_photon(struct Zone &zone) {
-    static double e_con[consts::n_dim][consts::n_dim];
-    static double e_cov[consts::n_dim][consts::n_dim];
+struct photon::InitPhoton HARMModel::sample_zone_photon(struct Zone &zone) {
+    thread_local static FluidZone fluid_zone;
+    thread_local static double e_con[consts::n_dim][consts::n_dim];
+    thread_local static double e_cov[consts::n_dim][consts::n_dim];
 
-    photon::Photon photon;
+    photon::InitPhoton photon;
 
     get_coord(zone.x_1, zone.x_2, photon.x);
 
-    auto fluid_zone = get_fluid_zone(zone.x_1, zone.x_2);
-
-    double nu;
-    double weight;
-
-    do {
-        nu = std::exp(monty_rand::rand() * consts::n_l_n + consts::l_nu_min);
-        weight = linear_interp_weight(nu);
-    } while (monty_rand::rand() >
-             (jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu, f_) / (weight + 1.0e-100)) / zone.dn_max);
-
-    photon.w = weight;
-    double j_max = jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, std::numbers::pi / 2.0, k2_);
-
-    double cos_th;
-    double th;
-    do {
-        cos_th = 2.0 * monty_rand::rand() - 1.0;
-        th = std::acos(cos_th);
-    } while (monty_rand::rand() >
-             (jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, th, k2_) / j_max));
-
-    double sin_th = std::sqrt(1.0 - cos_th * cos_th);
-    double phi = 2.0 * std::numbers::pi * monty_rand::rand();
-    double cos_phi = std::cos(phi);
-    double sin_phi = std::sin(phi);
-
-    double e = nu * consts::hpl / (consts::me * consts::cl * consts::cl);
-    double k_tetrad[consts::n_dim] = {
-        e,
-        e * cos_th,
-        e * sin_th * cos_phi,
-        e * sin_th * sin_phi,
-    };
-
     double b_hat[consts::n_dim];
 
-    if (zone.quit_flag) {
+    if (zone.first_photon) {
+        fluid_zone = get_fluid_zone(zone.x_1, zone.x_2);
         if (fluid_zone.b > 0.0) {
             for (int i = 0; i < consts::n_dim; ++i) {
                 b_hat[i] = fluid_zone.b_con[i] * units_.b_unit / fluid_zone.b;
@@ -735,8 +727,41 @@ struct photon::Photon HARMModel::sample_zone_photon(struct Zone &zone) {
             b_hat[0] = 1.0;
         }
         tetrads::make_tetrad(fluid_zone.u_con, b_hat, geometry_.cov(zone.x_1, zone.x_2), e_con, e_cov);
-        zone.quit_flag = 0;
+        zone.first_photon = false;
     }
+
+    double nu;
+    double weight;
+
+    do {
+        nu = std::exp(monty_rand::uniform() * consts::n_l_n + consts::l_nu_min);
+        weight = linear_interp_weight(nu);
+    } while (monty_rand::uniform() >
+             (jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu, f_) / (weight + 1.0e-100)) / zone.dn_max);
+
+    photon.w = weight;
+    double j_max = jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, std::numbers::pi / 2.0, k2_);
+
+    double cos_th;
+    double th;
+    do {
+        cos_th = 2.0 * monty_rand::uniform() - 1.0;
+        th = std::acos(cos_th);
+    } while (monty_rand::uniform() >
+             (jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, th, k2_) / j_max));
+
+    double sin_th = std::sqrt(1.0 - cos_th * cos_th);
+    double phi = 2.0 * std::numbers::pi * monty_rand::uniform();
+    double cos_phi = std::cos(phi);
+    double sin_phi = std::sin(phi);
+
+    double e = nu * consts::hpl / (consts::me * consts::cl * consts::cl);
+    double k_tetrad[consts::n_dim] = {
+        e,
+        e * cos_th,
+        e * sin_th * cos_phi,
+        e * sin_th * sin_phi,
+    };
 
     tetrads::tetrad_to_coordinate(e_con, k_tetrad, photon.k);
 
@@ -747,16 +772,11 @@ struct photon::Photon HARMModel::sample_zone_photon(struct Zone &zone) {
 
     photon.e = -tmp_k[0];
     photon.e_0 = -tmp_k[0];
-    photon.e_0_s = -tmp_k[0];
     photon.l = tmp_k[3];
-    photon.tau_scatt = 0.;
-    photon.tau_abs = 0.;
-    photon.x1i = photon.x[1];
-    photon.x2i = photon.x[2];
-    photon.n_scatt = 0;
     photon.n_e_0 = fluid_zone.n_e;
-    photon.b_0 = fluid_zone.b;
     photon.theta_e_0 = fluid_zone.theta_e;
+    photon.b_0 = fluid_zone.b;
+    photon.n_scatt = 0;
 
     return photon;
 }
@@ -771,7 +791,7 @@ double HARMModel::linear_interp_weight(double nu) {
     return std::exp((1.0 - d_i) * weight_[i] + d_i * weight_[i + 1]);
 }
 
-std::tuple<struct photon::Photon, bool> HARMModel::make_super_photon() {
+std::tuple<struct photon::InitPhoton, bool> HARMModel::make_super_photon() {
     static Zone zone{.num_to_gen = -1};
 
     while (zone.num_to_gen <= 0) {
@@ -782,7 +802,7 @@ std::tuple<struct photon::Photon, bool> HARMModel::make_super_photon() {
 
     bool quit = zone.x_1 == static_cast<int>(header_.n[0]);
 
-    photon::Photon photon;
+    photon::InitPhoton photon;
     if (!quit) {
         photon = sample_zone_photon(zone);
     }
@@ -790,31 +810,83 @@ std::tuple<struct photon::Photon, bool> HARMModel::make_super_photon() {
     return {photon, quit};
 }
 
-void HARMModel::make_super_photon_async(utils::ConcurrentQueue<photon::Photon> &photon_queue,
-                                        std::binary_semaphore &done_sem) {
-    auto start_iter = std::chrono::system_clock::now();
-    int n_rate = 0;
+void HARMModel::make_super_photon_thread(unsigned int worker_id,
+                                         utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
+                                         utils::ConcurrentQueue<struct Zone> &work_queue,
+                                         std::atomic<int> &n_rate) {
+    monty_rand::init(consts::rng_seed + worker_id);
 
     while (true) {
-        auto [photon, quit] = make_super_photon();
+        Zone zone = work_queue.dequeue();
+        if (zone.num_to_gen == -1) {
+            spdlog::debug("Worker {}: No more work to do", worker_id);
+            break;
+        }
 
-        photon_queue.enqueue(photon);
+        std::queue<photon::InitPhoton> buffer;
 
-        ++n_super_photon_created_;
-        ++n_rate;
+        while (zone.num_to_gen > 0) {
+            auto photon = sample_zone_photon(zone);
+
+            buffer.push(photon);
+
+            n_rate.fetch_add(1, std::memory_order_relaxed);
+
+            --zone.num_to_gen;
+        }
+        photon_queue.enqueue_q(buffer);
+    }
+    spdlog::debug("Worker {}: Exiting", worker_id);
+}
+
+void HARMModel::make_super_photon_async(utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
+                                        std::binary_semaphore &done_sem) {
+    constexpr int n_workers = consts::cuda::make_photon_n_workers;
+
+    auto start_iter = std::chrono::system_clock::now();
+    std::atomic<int> n_rate = 0;
+
+    Zone zone{.num_to_gen = -1};
+    utils::ConcurrentQueue<Zone> work_queue(256);
+    std::vector<std::thread> workers;
+
+    for (int i = 0; i < n_workers; ++i) {
+        workers.emplace_back(&HARMModel::make_super_photon_thread,
+                             this,
+                             i,
+                             std::ref(photon_queue),
+                             std::ref(work_queue),
+                             std::ref(n_rate));
+    }
+
+    while (true) {
+        zone = get_zone();
+
+        if (zone.x_1 == static_cast<int>(header_.n[0])) {
+            break;
+        }
+
+        work_queue.enqueue(zone);
 
         std::chrono::duration<double> elapsed_seconds = std::chrono::system_clock::now() - start_iter;
         if (elapsed_seconds.count() > 1.0) {
-            double rate = n_rate / elapsed_seconds.count();
+            int n_rate_ = n_rate.exchange(0);
+            n_super_photon_created_ += n_rate_;
+            double rate = n_rate_ / elapsed_seconds.count();
             spdlog::info("Rate {:.2f} ph/s, zone ({} {})", rate, zone_x_1_, zone_x_2_);
-            n_rate = 0;
             start_iter = std::chrono::system_clock::now();
         }
-
-        if (quit) {
-            break;
-        }
     }
+    n_super_photon_created_ += n_rate;
+
+    for (int i = 0; i < n_workers; ++i) {
+        work_queue.enqueue({.num_to_gen = -1});
+    }
+
+    for (auto &thread : workers) {
+        thread.join();
+    }
+    spdlog::debug("Worker threads joined");
 
     done_sem.release();
 }
@@ -905,7 +977,7 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
                 bi = bf;
             }
 
-            double x1 = -std::log(monty_rand::rand());
+            double x1 = -std::log(monty_rand::uniform());
 
             struct photon::Photon photon_p;
             photon_p.w = photon.w / bias;
@@ -1119,7 +1191,7 @@ void HARMModel::sample_scattered_photon(const double (&k)[consts::n_dim],
     /* solve for orientation of scattered photon */
 
     /* find phi for new photon */
-    double phi = 2.0 * std::numbers::pi * monty_rand::rand();
+    double phi = 2.0 * std::numbers::pi * monty_rand::uniform();
     double s_phi = std::sin(phi);
     double c_phi = std::cos(phi);
 
@@ -1523,7 +1595,7 @@ bool HARMModel::stop_criterion(struct photon::Photon &photon) const {
     if (photon.x[1] > consts::x1_max) {
         /* stop at large distance */
         if (photon.w < consts::weight_min) {
-            if (monty_rand::rand() <= 1.0 / consts::roulette) {
+            if (monty_rand::uniform() <= 1.0 / consts::roulette) {
                 photon.w *= consts::roulette;
             } else {
                 photon.w = 0.0;
@@ -1533,7 +1605,7 @@ bool HARMModel::stop_criterion(struct photon::Photon &photon) const {
     }
 
     if (photon.w < consts::weight_min) {
-        if (monty_rand::rand() <= 1.0 / consts::roulette) {
+        if (monty_rand::uniform() <= 1.0 / consts::roulette) {
             photon.w *= consts::roulette;
         } else {
             photon.w = 0.0;
