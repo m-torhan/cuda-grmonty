@@ -558,17 +558,17 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaMallocHost((void **)&photon_state[i], n_photons * sizeof(enum PhotonState)));
 
         for (int j = 0; j < consts::n_dim; ++j) {
-            photon_new[i].x[j] = new double[n_photons];
-            photon_new[i].k[j] = new double[n_photons];
+            gpuErrchk(cudaMallocHost((void **)&photon_new[i].x[j], n_photons * sizeof(double)));
+            gpuErrchk(cudaMallocHost((void **)&photon_new[i].k[j], n_photons * sizeof(double)));
         }
-        photon_new[i].w = new double[n_photons];
-        photon_new[i].e = new double[n_photons];
-        photon_new[i].l = new double[n_photons];
-        photon_new[i].n_e_0 = new double[n_photons];
-        photon_new[i].theta_e_0 = new double[n_photons];
-        photon_new[i].b_0 = new double[n_photons];
-        photon_new[i].e_0 = new double[n_photons];
-        photon_new[i].n_scatt = new int[n_photons];
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].w, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].e, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].l, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].n_e_0, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].theta_e_0, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].b_0, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].e_0, n_photons * sizeof(double)));
+        gpuErrchk(cudaMallocHost((void **)&photon_new[i].n_scatt, n_photons * sizeof(int)));
 
         for (int j = 0; j < n_photons; ++j) {
             photon_state[i][j] = PhotonState::Empty;
@@ -984,15 +984,15 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaFreeHost(photon_state[i]));
 
         for (int j = 0; j < consts::n_dim; ++j) {
-            delete[] photon_new[i].x[j];
-            delete[] photon_new[i].k[j];
+            gpuErrchk(cudaFreeHost(photon_new[i].x[j]));
+            gpuErrchk(cudaFreeHost(photon_new[i].k[j]));
         }
-        delete[] photon_new[i].w;
-        delete[] photon_new[i].e;
-        delete[] photon_new[i].l;
-        delete[] photon_new[i].n_e_0;
-        delete[] photon_new[i].b_0;
-        delete[] photon_new[i].theta_e_0;
+        gpuErrchk(cudaFreeHost(photon_new[i].w));
+        gpuErrchk(cudaFreeHost(photon_new[i].e));
+        gpuErrchk(cudaFreeHost(photon_new[i].l));
+        gpuErrchk(cudaFreeHost(photon_new[i].n_e_0));
+        gpuErrchk(cudaFreeHost(photon_new[i].b_0));
+        gpuErrchk(cudaFreeHost(photon_new[i].theta_e_0));
 
         free_photon_array(dev_photon[i]);
         gpuErrchk(cudaFree(dev_photon_state[i]));
