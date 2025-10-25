@@ -56,6 +56,8 @@ If you want to use Python directly instead, install dependencies specified in [p
 python3 ./plot_spectrum.py --spectrum_path ./spectrum --plot_path ./spectrum.png
 ```
 
+<img src="imgs/spectrum.png" alt="Spectrum" width=800>
+
 ## Benchmarks
 
 Input parameters:
