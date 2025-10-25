@@ -9,6 +9,8 @@
 #include <math_constants.h>
 
 #include <cstdio>
+#include <fstream>
+#include <iostream>
 #include <queue>
 #include <semaphore>
 #include <tuple>
@@ -169,6 +171,8 @@ static __global__ void step_size(const struct harm::Header *header,
                                  struct PhotonArray photon,
                                  enum PhotonState *photon_state,
                                  double *step_size);
+
+static __global__ void record_photon_position(struct PhotonArray photon, enum PhotonState *photon_state, int *pos_hist);
 
 /**
  * @brief Advance photons along their trajectories by the computed step size.
@@ -508,9 +512,12 @@ void track_super_photons(double bias_norm,
                          std::binary_semaphore &stop_sem,
                          harm::Spectrum (&spectrum)[consts::n_th_bins][consts::n_e_bins],
                          uint64_t &n_super_photon_recorded,
-                         uint64_t &n_super_photon_scatt) {
+                         uint64_t &n_super_photon_scatt,
+                         int *pos_hist) {
     const int grid_dim = consts::cuda::grid_dim;
     const int block_dim = consts::cuda::block_dim;
+
+    bool record_trajectories = pos_hist != nullptr;
 
     constexpr unsigned int n_streams = 2;
 
@@ -617,6 +624,15 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaMalloc((void **)&dev_g_cov[i], n_photons * consts::n_dim * consts::n_dim * sizeof(double)));
 
         gpuErrchk(cudaMemset(dev_photon_state[i], 0, n_photons * sizeof(enum PhotonState)));
+    }
+
+    int *dev_pos_hist;
+
+    if (record_trajectories) {
+        constexpr size_t pos_hist_size =
+            consts::cuda::pos_hist_shape_0 * consts::cuda::pos_hist_shape_1 * consts::cuda::pos_hist_shape_2;
+        gpuErrchk(cudaMalloc((void **)&dev_pos_hist, pos_hist_size * sizeof(int)));
+        gpuErrchk(cudaMemset(dev_pos_hist, 0, pos_hist_size * sizeof(int)));
     }
 
     int n_iter = 0;
@@ -788,6 +804,11 @@ void track_super_photons(double bias_norm,
                                   n_photons * sizeof(double),
                                   cudaMemcpyDeviceToDevice,
                                   streams[stream_idx]));
+
+        if (record_trajectories) {
+            record_photon_position<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
+                dev_photon[stream_idx], photon_state[stream_idx], dev_pos_hist);
+        }
 
         step_size<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
             dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx], dev_step_size[stream_idx]);
@@ -1034,6 +1055,14 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaFree(dev_fluid_params[i]));
         gpuErrchk(cudaFree(dev_g_cov[i]));
     }
+
+    if (record_trajectories) {
+        constexpr size_t pos_hist_size =
+            consts::cuda::pos_hist_shape_0 * consts::cuda::pos_hist_shape_1 * consts::cuda::pos_hist_shape_2;
+
+        gpuErrchk(cudaMemcpy(pos_hist, dev_pos_hist, pos_hist_size * sizeof(int), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaFree(dev_pos_hist));
+    }
 }
 
 static __global__ void init_rng(curandStatePhilox4_32_10_t *rng_state) {
@@ -1201,6 +1230,37 @@ static __global__ void step_size(const struct harm::Header *header,
         double i_dl_x_3 = 1.0 / (fabs(dl_x_3) + consts::eps);
 
         step_size[tid] = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
+    }
+}
+
+static __global__ void
+record_photon_position(struct PhotonArray photon, enum PhotonState *photon_state, int *pos_hist) {
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        if (photon_state[tid] != PhotonState::Initialized) {
+            continue;
+        }
+        double t = photon.x[0][tid];
+        double r = photon.x[1][tid];
+        double th = photon.x[2][tid];
+        double phi = photon.x[3][tid];
+
+        double x = r * sin(th) * cos(phi);
+        double y = r * sin(th) * sin(phi);
+        double z = r * cos(th);
+
+        double p1 = x;
+        double p2 = y;
+
+        int ti = static_cast<int>(t * 4.0f);
+        int p1i = static_cast<int>((consts::cuda::pos_hist_shape_1 / 4.0f * (p1 + 2.0f)));
+        int p2i = static_cast<int>((consts::cuda::pos_hist_shape_1 / 4.0f * (p2 + 2.0f)));
+
+        if (0 <= ti && ti < consts::cuda::pos_hist_shape_0 && 0 <= p1i && p1i < consts::cuda::pos_hist_shape_1 &&
+            0 <= p2i && p2i < consts::cuda::pos_hist_shape_2) {
+            atomicAdd(&pos_hist[ti * consts::cuda::pos_hist_shape_1 * consts::cuda::pos_hist_shape_2 +
+                                p1i * consts::cuda::pos_hist_shape_2 + p2i],
+                      1);
+        }
     }
 }
 

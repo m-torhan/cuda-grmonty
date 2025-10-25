@@ -7,6 +7,7 @@
 #pragma once
 
 #include <semaphore>
+#include <string>
 
 #include "cuda_grmonty/harm_data.hpp"
 #include "cuda_grmonty/photon.hpp"
@@ -51,6 +52,7 @@ void free_memory();
  * @param spectrum                2D array to accumulate photon spectra (frequency × energy bins).
  * @param n_super_photon_recorded Output: number of super-photons recorded.
  * @param n_super_photon_scatt    Output: number of super-photons that scattered.
+ * @param pos_hist                Output: Histogram of photons positions.
  */
 void track_super_photons(double bias_norm,
                          double max_tau_scatt,
@@ -58,6 +60,7 @@ void track_super_photons(double bias_norm,
                          std::binary_semaphore &stop_sem,
                          harm::Spectrum (&spectrum)[consts::n_th_bins][consts::n_e_bins],
                          uint64_t &n_super_photon_recorded,
-                         uint64_t &n_super_photon_scatt);
+                         uint64_t &n_super_photon_scatt,
+                         int *pos_hist);
 
 }; /* namespace cuda_super_photon */

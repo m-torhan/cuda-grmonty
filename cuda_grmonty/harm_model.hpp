@@ -61,7 +61,7 @@ public:
      * Executes the main Monte Carlo loop that propagates photons, applies interactions, and accumulates results into
      * the spectrum.
      */
-    void run_simulation();
+    void run_simulation(std::string trajectories_recording_path);
 
     /**
      * @brief Writes the computed photon spectrum to a file.
@@ -312,6 +312,14 @@ private:
      */
     std::tuple<struct photon::InitPhoton, bool> make_super_photon();
 
+    /**
+     * @brief Generates and enqueues superphotons for radiative transfer simulation.
+     *
+     * @param worked_id    ID of the worker thread executing this function.
+     * @param photon_queue Concurrent queue where generated InitPhoton objects are stored.
+     * @param work_queue   Concurrent queue containing simulation zones to process.
+     * @param n_rate       Atomic counter tracking the total number of emitted photons.
+     */
     void make_super_photon_thread(unsigned int worked_id,
                                   utils::ConcurrentQueue<photon::InitPhoton> &photon_queue,
                                   utils::ConcurrentQueue<struct Zone> &work_queue,
@@ -472,6 +480,8 @@ private:
      * @param[out] x  Output coordinate in simulation coordinates.
      */
     void get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const;
+
+    void write_trajectories(int *pos_hist, std::string trajectories_recording_path);
 };
 
 }; /* namespace harm */

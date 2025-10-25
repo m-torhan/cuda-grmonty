@@ -19,6 +19,11 @@
 #include <tuple>
 #include <vector>
 
+#if defined(CUDA) && __has_include(<opencv2/opencv.hpp>)
+#include <opencv2/opencv.hpp>
+#define OPENCV_EXISTS
+#endif /* __has_include(<opencv2/opencv.hpp>) */
+
 #include "spdlog/spdlog.h"
 
 #include "cuda_grmonty/consts.hpp"
@@ -337,7 +342,7 @@ void HARMModel::init_nint_table() {
     spdlog::info("Initializing nint table done");
 }
 
-void HARMModel::run_simulation() {
+void HARMModel::run_simulation(std::string trajectories_recording_path) {
     auto start = std::chrono::system_clock::now();
 
     spdlog::info("Starting main loop");
@@ -351,12 +356,34 @@ void HARMModel::run_simulation() {
     std::thread make_super_photon_thread(
         &HARMModel::make_super_photon_async, this, std::ref(photon_queue), std::ref(done_sem));
 
-    cuda_super_photon::track_super_photons(
-        bias_norm_, max_tau_scatt_, photon_queue, done_sem, spectrum_, n_super_photon_recorded_, n_super_photon_scatt_);
+    int *pos_hist = nullptr;
+    if (!trajectories_recording_path.empty()) {
+#ifdef OPENCV_EXISTS
+        pos_hist =
+            new int[consts::cuda::pos_hist_shape_0 * consts::cuda::pos_hist_shape_1 * consts::cuda::pos_hist_shape_2];
+#else  /* OPENCV_EXISTS */
+        spdlog::warn("OpenCV not found, trajectories will not be recorded");
+#endif /* OPENCV_EXISTS */
+    }
+
+    cuda_super_photon::track_super_photons(bias_norm_,
+                                           max_tau_scatt_,
+                                           photon_queue,
+                                           done_sem,
+                                           spectrum_,
+                                           n_super_photon_recorded_,
+                                           n_super_photon_scatt_,
+                                           pos_hist);
     spdlog::debug("Track done");
 
     make_super_photon_thread.join();
     spdlog::debug("Master thread joined");
+
+    if (!trajectories_recording_path.empty() && pos_hist != nullptr) {
+        write_trajectories(pos_hist, trajectories_recording_path);
+
+        delete[] pos_hist;
+    }
 
     cuda_super_photon::free_memory();
 #else  /* CUDA */
@@ -1641,6 +1668,42 @@ void HARMModel::get_coord(int x_1, int x_2, double (&x)[consts::n_dim]) const {
     x[1] = header_.x_start[1] + (x_1 + 0.5) * header_.dx[1];
     x[2] = header_.x_start[2] + (x_2 + 0.5) * header_.dx[2];
     x[3] = header_.x_start[3];
+}
+
+void HARMModel::write_trajectories(int *pos_hist, std::string trajectories_recording_path) {
+#ifdef OPENCV_EXISTS
+    const int frames = consts::cuda::pos_hist_shape_0;
+    const int width = consts::cuda::pos_hist_shape_1;
+    const int height = consts::cuda::pos_hist_shape_2;
+
+    int codec = cv::VideoWriter::fourcc('a', 'v', 'c', '1'); /* H.264 */
+    cv::VideoWriter writer(trajectories_recording_path, codec, 32.0, cv::Size(width, height), true);
+
+    /* Write frames */
+    for (int f = 0; f < frames; ++f) {
+        /* Wrap raw grayscale data into cv::Mat */
+        uint8_t frame[height][width];
+
+        for (int x = 0; x < width; ++x) {
+            for (int y = 0; y < height; ++y) {
+                frame[y][x] = std::min(255, pos_hist[f * width * height + y * width + x]);
+            }
+        }
+
+        cv::Mat gray(height, width, CV_8UC1, frame);
+
+        /* Convert to BGR */
+        cv::Mat bgr;
+        cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
+
+        writer.write(bgr);
+    }
+
+    writer.release();
+    spdlog::info("Trajectories written to {}", trajectories_recording_path);
+#else  /* OPENCV_EXISTS */
+    spdlog::warn("OpenCV is not installed, trajectories were not saved");
+#endif /* OPENCV_EXISTS */
 }
 
 static double

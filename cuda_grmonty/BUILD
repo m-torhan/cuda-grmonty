@@ -258,6 +258,19 @@ cuda_library(
 )
 
 cc_library(
+    name = "opencv",
+    hdrs = [],
+    includes = ["/usr/include/opencv4"],
+    linkopts = [
+        "-lopencv_core",
+        "-lopencv_imgproc",
+        "-lopencv_highgui",
+        "-lopencv_videoio",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "harm_model",
     srcs = ["harm_model.cpp"],
     hdrs = ["harm_model.hpp"],
@@ -275,9 +288,13 @@ cc_library(
         ":tetrads",
         "@spdlog//:spdlog",
     ] + select({
-        ":cuda_enabled": [":cuda_super_photon"],
+        ":cuda_enabled": [
+            ":cuda_super_photon",
+            ":opencv",
+        ],
         "//conditions:default": [],
     }),
+    copts = ["-I/usr/include/opencv4"],
 )
 
 cc_binary(

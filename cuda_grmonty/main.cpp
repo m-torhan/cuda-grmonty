@@ -21,6 +21,7 @@ ABSL_FLAG(int, photon_n, 5000000, "Estimate of photon number");
 ABSL_FLAG(double, mass_unit, 4e19, "Mass unit");
 ABSL_FLAG(std::string, harm_dump_path, "", "HARM dump file path");
 ABSL_FLAG(std::string, spectrum_path, "", "Spectrum file path");
+ABSL_FLAG(std::string, trajectories_recording_path, "", "Path to trajectories recording");
 ABSL_FLAG(spdlog::level::level_enum, verbosity, spdlog::level::info, "Logging verbosity");
 
 int main(int argc, char *argv[]) {
@@ -30,6 +31,7 @@ int main(int argc, char *argv[]) {
     auto mass_unit = absl::GetFlag(FLAGS_mass_unit);
     auto harm_dump_path = absl::GetFlag(FLAGS_harm_dump_path);
     auto spectrum_path = absl::GetFlag(FLAGS_spectrum_path);
+    auto trajectories_recording_path = absl::GetFlag(FLAGS_trajectories_recording_path);
     auto verbosity = absl::GetFlag(FLAGS_verbosity);
 
     spdlog::set_level(verbosity);
@@ -39,6 +41,9 @@ int main(int argc, char *argv[]) {
     spdlog::info("\tmass_unit: {}", mass_unit);
     spdlog::info("\tharm_dump_path: {}", harm_dump_path);
     spdlog::info("\tspectrum_path: {}", spectrum_path);
+    if (!trajectories_recording_path.empty()) {
+        spdlog::info("\ttrajectories_recording_path: {}", trajectories_recording_path);
+    }
 
     harm::HARMModel harm_model(photon_n, mass_unit);
 
@@ -48,7 +53,7 @@ int main(int argc, char *argv[]) {
 
     monty_rand::init(consts::rng_seed);
 
-    harm_model.run_simulation();
+    harm_model.run_simulation(trajectories_recording_path);
 
     harm_model.report_spectrum(spectrum_path);
 

@@ -168,6 +168,10 @@ constexpr int threads_per_grid = block_dim * grid_dim; /* Total number of thread
 constexpr int n_photons = threads_per_grid * 1;        /* Number of photons processed at once */
 constexpr int make_photon_n_workers = 4;               /* Number of threads for photons creation */
 
+const size_t pos_hist_shape_0 = 128;
+const size_t pos_hist_shape_1 = 2048;
+const size_t pos_hist_shape_2 = 2048;
+
 } /* namespace cuda */
 
 }; /* namespace consts */

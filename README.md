@@ -58,6 +58,18 @@ python3 ./plot_spectrum.py --spectrum_path ./spectrum --plot_path ./spectrum.png
 
 <img src="imgs/spectrum.png" alt="Spectrum" width=800>
 
+## Visualizations
+
+To enable recording photons positions for visualizations install OpenCV and add `--trajectories_recording_path` parameter.
+
+```bash
+./bazel-bin/cuda_grmonty/main --harm_dump_path ./dump019 --spectrum_path ./spectrum -photon_n 5000000 --trajectories_recording_path ./trajectories.mp4
+```
+
+### Example result
+
+<img src="imgs/trajectories.gif" alt="Trajectories" width=800>
+
 ## Benchmarks
 
 Input parameters:
