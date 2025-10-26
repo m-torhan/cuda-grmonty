@@ -28,7 +28,7 @@ jobs:
 
     - name: Test
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" test --test_output=all //...
+        "${GITHUB_WORKSPACE}/bin/bazel" test --test_output=all //cuda_grmonty/tests/...
 
   coverage:
     runs-on: ubuntu-latest
@@ -54,7 +54,7 @@ jobs:
 
     - name: Coverage
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" coverage --combined_report=lcov --test_output=all //...
+        "${GITHUB_WORKSPACE}/bin/bazel" coverage --combined_report=lcov --test_output=all //cuda_grmonty/tests/...
 
     - name: Generate report
       run: |

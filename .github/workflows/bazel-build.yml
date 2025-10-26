@@ -28,7 +28,7 @@ jobs:
 
     - name: Build
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build //...
+        "${GITHUB_WORKSPACE}/bin/bazel" build //cuda_grmonty:main
 
   build-cuda:
     runs-on: ubuntu-latest
@@ -58,6 +58,11 @@ jobs:
         mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
         chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
+    - name: Install OpenCV
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y libopencv-dev
+
     - name: Install CUDA Toolkit
       uses: Jimver/cuda-toolkit@master
       id: cuda-toolkit
@@ -66,4 +71,4 @@ jobs:
 
     - name: Build
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build //... --config=cuda
+        "${GITHUB_WORKSPACE}/bin/bazel" build //cuda_grmonty:main --config=cuda
