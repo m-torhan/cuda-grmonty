@@ -412,8 +412,9 @@ __device__ __forceinline__ int lconn_flat_idx(int i, int j, int k) {
  * @param x      Position 4-vector.
  * @param lconn  Output 3D array of connection coefficients.
  */
-static __device__ void
-get_connection(const struct harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]);
+static __device__ void get_connection(const struct harm::Header *__restrict__ header,
+                                      const double (&x)[consts::n_dim],
+                                      double (&lconn)[lconn_flat_len]);
 
 /**
  * @brief Sample a scattered photon momentum from the electron distribution.
@@ -1744,143 +1745,178 @@ static __device__ void init_dkdlam(const struct harm::Header *header,
     }
 }
 
-static __device__ void
-get_connection(const struct harm::Header *header, const double (&x)[consts::n_dim], double (&lconn)[lconn_flat_len]) {
-    const double r1 = exp(x[1]);
+static __device__ __forceinline__ void get_connection(const struct harm::Header *__restrict__ header,
+                                                      const double (&x)[consts::n_dim],
+                                                      double (&lconn)[lconn_flat_len]) {
+    /* Create restricted pointers from references (helps alias analysis without changing the signature) */
+    const double *__restrict__ xp = &x[0];
+    double *__restrict__ out = &lconn[0];
+
+    /* Read-only header fields (use __ldg if available) */
+    const double a = __ldg(&header->a);
+    const double h_slope = __ldg(&header->h_slope);
+
+    /* Basic radial terms */
+    const double r1 = exp(xp[1]);
     const double r2 = r1 * r1;
-    const double r3 = r2 * r1;
-    const double r4 = r3 * r1;
 
-    double s_x;
-    double c_x;
-    sincos(2.0 * CUDART_PI * x[2], &s_x, &c_x);
+    /* sin(2πx), cos(2πx) via sincospi for accuracy & fewer temps */
+    double s_x, c_x;
+    sincospi(2.0 * xp[2], &s_x, &c_x);
 
-    const double th = CUDART_PI * x[2] + 0.5 * (1.0 - header->h_slope) * s_x;
-    const double dthdx2 = CUDART_PI * (1.0 + (1.0 - header->h_slope) * c_x);
-    const double d2thdx22 = -2.0 * CUDART_PI * CUDART_PI * (1.0 - header->h_slope) * s_x;
-    const double dthdx22 = dthdx2 * dthdx2;
-
-    double sth;
-    double cth;
+    /* Polar angle and derivatives */
+    const double th = CUDART_PI * xp[2] + 0.5 * (1.0 - h_slope) * s_x;
+    double sth, cth;
     sincos(th, &sth, &cth);
 
     const double sth2 = sth * sth;
-    const double r1sth2 = r1 * sth2;
-    const double sth4 = sth2 * sth2;
     const double cth2 = cth * cth;
-    const double cth4 = cth2 * cth2;
     const double s2th = 2.0 * sth * cth;
     const double c2th = 2.0 * cth2 - 1.0;
 
-    const double a = header->a;
     const double a2 = a * a;
-    const double a3 = a2 * a;
-    const double a4 = a3 * a;
     const double a2sth2 = a2 * sth2;
     const double a2cth2 = a2 * cth2;
-    const double a4cth4 = a4 * cth4;
 
     const double rho2 = r2 + a2cth2;
-    const double rho22 = rho2 * rho2;
-    const double rho23 = rho22 * rho2;
     const double irho2 = 1.0 / rho2;
     const double irho22 = irho2 * irho2;
     const double irho23 = irho22 * irho2;
-    const double irho23_dthdx2 = irho23 / dthdx2;
+
+    const double dthdx2 = CUDART_PI * (1.0 + (1.0 - h_slope) * c_x);
+    const double inv_dthdx2 = 1.0 / dthdx2;
+    const double dthdx2_sq = dthdx2 * dthdx2; /* (dθ/dx2)^2 */
+    const double d2thdx22 = -2.0 * CUDART_PI * CUDART_PI * (1.0 - h_slope) * s_x;
 
     const double fac1 = r2 - a2cth2;
-    const double fac1_rho23 = fac1 * irho23;
     const double fac2 = a2 + 2.0 * r2 + a2 * c2th;
-    const double fac3 = a2 + r1 * (-2.0 + r1);
+    const double inv_fac2 = 1.0 / fac2;
+    const double inv_fac22 = inv_fac2 * inv_fac2;
+    const double fac3 = a2 + r1 * (-2.0 + r1); /* a2 + r2 - 2*r1 */
 
-    lconn[lconn_flat_idx(0, 0, 0)] = 2.0 * r1 * fac1_rho23;
-    lconn[lconn_flat_idx(0, 0, 1)] = r1 * (2.0 * r1 + rho2) * fac1_rho23;
-    lconn[lconn_flat_idx(0, 0, 2)] = -a2 * r1 * s2th * dthdx2 * irho22;
-    lconn[lconn_flat_idx(0, 0, 3)] = -2.0 * a * r1sth2 * fac1_rho23;
+    const double r1sth2 = r1 * sth2;
+    const double inv_sth = 1.0 / sth;
+    const double irho23_dthdx2 = irho23 * inv_dthdx2;
 
-    /* lconn[0][1][0] = lconn[0][0][1]; */
-    lconn[lconn_flat_idx(0, 1, 1)] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
-    lconn[lconn_flat_idx(0, 1, 2)] = -a2 * r2 * s2th * dthdx2 * irho22;
-    lconn[lconn_flat_idx(0, 1, 3)] = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
+/* Helper */
+#define L(i, j, k) out[lconn_flat_idx((i), (j), (k))]
 
-    /* lconn[0][2][0] = lconn[0][0][2]; */
-    /* lconn[0][2][1] = lconn[0][1][2]; */
-    lconn[lconn_flat_idx(0, 2, 2)] = -2.0 * r2 * dthdx22 * irho2;
-    lconn[lconn_flat_idx(0, 2, 3)] = a3 * r1sth2 * s2th * dthdx2 * irho22;
+    /* Block a=0 */
+    {
+        const double fac1_rho23 = fac1 * irho23;
 
-    /* lconn[0][3][0] = lconn[0][0][3]; */
-    /* lconn[0][3][1] = lconn[0][1][3]; */
-    /* lconn[0][3][2] = lconn[0][2][3]; */
-    lconn[lconn_flat_idx(0, 3, 3)] = 2.0 * r1sth2 * (-r1 * rho22 + a2sth2 * fac1) * irho23;
+        L(0, 0, 0) = 2.0 * r1 * fac1_rho23;
+        L(0, 0, 1) = r1 * (2.0 * r1 + rho2) * fac1_rho23;
+        L(0, 0, 2) = -a2 * r1 * s2th * dthdx2 * irho22;
+        L(0, 0, 3) = -2.0 * a * r1sth2 * fac1_rho23;
 
-    lconn[lconn_flat_idx(1, 0, 0)] = fac3 * fac1 / (r1 * rho23);
-    lconn[lconn_flat_idx(1, 0, 1)] = fac1 * (-2.0 * r1 + a2sth2) * irho23;
-    lconn[lconn_flat_idx(1, 0, 2)] = 0.0;
-    lconn[lconn_flat_idx(1, 0, 3)] = -a * sth2 * fac3 * fac1 / (r1 * rho23);
+        const double r3 = r2 * r1;
+        const double r4 = r2 * r2;
+        const double a3 = a2 * a;
+        const double a4 = a2 * a2;
+        const double cth4 = cth2 * cth2;
+        const double a4cth4 = a4 * cth4;
 
-    /* lconn[1][1][0] = lconn[1][0][1]; */
-    lconn[lconn_flat_idx(1, 1, 1)] =
-        (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 + r3 * sth2 +
-                                               r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
-        irho23;
-    lconn[lconn_flat_idx(1, 1, 2)] = -a2 * dthdx2 * s2th / fac2;
-    lconn[lconn_flat_idx(1, 1, 3)] =
-        a * sth2 * (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
-        irho23;
+        L(0, 1, 1) = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23;
+        L(0, 1, 2) = -a2 * r2 * s2th * dthdx2 * irho22;
+        L(0, 1, 3) = a * r1 * (-r1 * (r3 + 2.0 * fac1) + a4cth4) * sth2 * irho23;
 
-    /* lconn[1][2][0] = lconn[1][0][2]; */
-    /* lconn[1][2][1] = lconn[1][1][2]; */
-    lconn[lconn_flat_idx(1, 2, 2)] = -fac3 * dthdx22 * irho2;
-    lconn[lconn_flat_idx(1, 2, 3)] = 0.0;
+        L(0, 2, 2) = -2.0 * r2 * dthdx2_sq * irho2;
+        L(0, 2, 3) = a3 * r1sth2 * s2th * dthdx2 * irho22;
 
-    /* lconn[1][3][0] = lconn[1][0][3]; */
-    /* lconn[1][3][1] = lconn[1][1][3]; */
-    /* lconn[1][3][2] = lconn[1][2][3]; */
-    lconn[lconn_flat_idx(1, 3, 3)] = -fac3 * sth2 * (r1 * rho22 - a2 * fac1 * sth2) / (r1 * rho23);
+        const double rho22_local = rho2 * rho2;
+        L(0, 3, 3) = 2.0 * r1sth2 * (-r1 * rho22_local + a2sth2 * fac1) * irho23;
+    }
 
-    lconn[lconn_flat_idx(2, 0, 0)] = -a2 * r1 * s2th * irho23_dthdx2;
-    lconn[lconn_flat_idx(2, 0, 1)] = r1 * lconn[lconn_flat_idx(2, 0, 0)];
-    lconn[lconn_flat_idx(2, 0, 2)] = 0.0;
-    lconn[lconn_flat_idx(2, 0, 3)] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
+    /* Block a=1 */
+    {
+        const double inv_r1 = 1.0 / r1;
 
-    /* lconn[2][1][0] = lconn[2][0][1]; */
-    lconn[lconn_flat_idx(2, 1, 1)] = r2 * lconn[lconn_flat_idx(2, 0, 0)];
-    lconn[lconn_flat_idx(2, 1, 2)] = r2 * irho2;
-    lconn[lconn_flat_idx(2, 1, 3)] =
-        (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1sth2))) *
-        irho23_dthdx2;
+        L(1, 0, 0) = fac3 * fac1 * inv_r1 * irho23;
+        L(1, 0, 1) = fac1 * (-2.0 * r1 + a2sth2) * irho23;
+        L(1, 0, 2) = 0.0;
+        L(1, 0, 3) = -a * sth2 * fac3 * fac1 * inv_r1 * irho23;
 
-    /* lconn[2][2][0] = lconn[2][0][2]; */
-    /* lconn[2][2][1] = lconn[2][1][2]; */
-    lconn[lconn_flat_idx(2, 2, 2)] = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 / dthdx2;
-    lconn[lconn_flat_idx(2, 2, 3)] = 0.0;
+        const double r3 = r2 * r1;
+        const double r4 = r2 * r2;
+        const double a4 = a2 * a2;
+        const double cth4 = cth2 * cth2;
+        const double a4cth4 = a4 * cth4;
 
-    /* lconn[2][3][0] = lconn[2][0][3]; */
-    /* lconn[2][3][1] = lconn[2][1][3]; */
-    /* lconn[2][3][2] = lconn[2][2][3]; */
-    lconn[lconn_flat_idx(2, 3, 3)] =
-        -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
+        L(1, 1, 1) = (r4 * (r1 - 2.0) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4cth4 * cth2 +
+                                                           r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) *
+                     irho23;
 
-    lconn[lconn_flat_idx(3, 0, 0)] = a * fac1_rho23;
-    lconn[lconn_flat_idx(3, 0, 1)] = r1 * lconn[lconn_flat_idx(3, 0, 0)];
-    lconn[lconn_flat_idx(3, 0, 2)] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22);
-    lconn[lconn_flat_idx(3, 0, 3)] = -a2sth2 * fac1_rho23;
+        L(1, 1, 2) = -a2 * dthdx2 * s2th * inv_fac2;
 
-    /* lconn[3][1][0] = lconn[3][0][1]; */
-    lconn[lconn_flat_idx(3, 1, 1)] = a * r2 * fac1_rho23;
-    lconn[lconn_flat_idx(3, 1, 2)] =
-        -2 * a * r1 * (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2);
-    lconn[lconn_flat_idx(3, 1, 3)] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23;
+        L(1, 1, 3) = a * sth2 *
+                     (a4 * r1 * cth4 + r2 * (2.0 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) *
+                     irho23;
 
-    /* lconn[3][2][0] = lconn[3][0][2]; */
-    /* lconn[3][2][1] = lconn[3][1][2]; */
-    lconn[lconn_flat_idx(3, 2, 2)] = -a * r1 * dthdx22 * irho2;
-    lconn[lconn_flat_idx(3, 2, 3)] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22;
+        L(1, 2, 2) = -fac3 * dthdx2_sq * irho2;
+        L(1, 2, 3) = 0.0;
 
-    /* lconn[3][3][0] = lconn[3][0][3]; */
-    /* lconn[3][3][1] = lconn[3][1][3]; */
-    /* lconn[3][3][2] = lconn[3][2][3]; */
-    lconn[lconn_flat_idx(3, 3, 3)] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23;
+        /* (1,3,3) */
+        const double rho22_local = rho2 * rho2;
+        L(1, 3, 3) = -fac3 * sth2 * (r1 * rho22_local - a2 * fac1 * sth2) * inv_r1 * irho23;
+    }
+
+    /* Block a=2 */
+    {
+        L(2, 0, 0) = -a2 * r1 * s2th * irho23_dthdx2;
+        L(2, 0, 1) = r1 * L(2, 0, 0);
+        L(2, 0, 2) = 0.0;
+        L(2, 0, 3) = a * r1 * (a2 + r2) * s2th * irho23_dthdx2;
+
+        L(2, 1, 1) = r2 * L(2, 0, 0);
+        L(2, 1, 2) = r2 * irho2;
+
+        const double r3 = r2 * r1;
+        const double cth4 = cth2 * cth2;
+
+        L(2, 1, 3) = (a * r1 * cth * sth *
+                      (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2.0 * r1 * sth2))) *
+                     irho23_dthdx2;
+
+        L(2, 2, 2) = -a2 * cth * sth * dthdx2 * irho2 + d2thdx22 * inv_dthdx2;
+        L(2, 2, 3) = 0.0;
+
+        const double a4 = a2 * a2;
+        const double sth4 = sth2 * sth2;
+        const double rho23v = (rho2 * rho2) * rho2;
+
+        L(2, 3, 3) =
+            -cth * sth * (rho23v + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2;
+    }
+
+    /* Block a=3 */
+    {
+        const double fac1_rho23 = fac1 * irho23;
+
+        L(3, 0, 0) = a * fac1_rho23;
+        L(3, 0, 1) = r1 * L(3, 0, 0);
+
+        L(3, 0, 2) = -2.0 * a * r1 * cth * dthdx2 * inv_sth * irho22;
+
+        L(3, 0, 3) = -a2sth2 * fac1_rho23;
+
+        L(3, 1, 1) = a * r2 * fac1_rho23;
+
+        const double num_312 = (a2 + 2.0 * r1 * (2.0 + r1) + a2 * c2th);
+        L(3, 1, 2) = -2.0 * a * r1 * num_312 * cth * dthdx2 * inv_sth * inv_fac22;
+
+        const double rho22_local = rho2 * rho2;
+        L(3, 1, 3) = r1 * (r1 * rho22_local - a2 * sth2 * fac1) * irho23;
+
+        L(3, 2, 2) = -a * r1 * dthdx2_sq * irho2;
+
+        L(3, 2, 3) = dthdx2 * (0.25 * (1.0 / inv_fac22) * cth * inv_sth + a2 * r1 * s2th) * irho22;
+
+        const double a3 = a2 * a;
+        const double sth4 = sth2 * sth2;
+        L(3, 3, 3) = (-a * r1sth2 * (rho2 * rho2) + a3 * sth4 * fac1) * irho23;
+    }
+#undef L
 }
 
 static __device__ void push_photon(const struct harm::Header *header, struct photon::Photon *photon, double dl) {
