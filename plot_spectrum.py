@@ -19,7 +19,6 @@ Simple script for spectrum plotting.
 import nmmn.sed
 import argparse
 from pathlib import Path
-from pylab import plot
 import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
@@ -41,8 +40,10 @@ if __name__ == "__main__":
     s = nmmn.sed.SED()
     s.grmonty(str(args.spectrum_path.resolve()))
 
-    plt.figure()
-    plot(s.lognu, s.ll)
+    plt.figure(figsize=(10, 6))
+    plt.plot(s.lognu, s.ll)
+    plt.xlabel('log(nu)')
+    plt.ylabel('lumosity')
     plt.savefig(str(args.plot_path.resolve()), dpi=600, bbox_inches="tight")
 
     print(f"Spectrum plot saved to {args.plot_path}")
