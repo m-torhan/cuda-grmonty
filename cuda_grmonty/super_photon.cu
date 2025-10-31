@@ -354,7 +354,7 @@ static __device__ void push_photon(const struct harm::Header *header, struct pho
  * @return Energy and estimated errors.
  */
 static __device__ std::tuple<double, double, double>
-push_photon_step(const struct harm::Header *header, struct photon::Photon *photon, double step_size);
+push_photon_step(const struct harm::Header *__restrict__ header, struct photon::Photon *photon, double step_size);
 
 /**
  * @brief Compute photon weight bias factor for Monte Carlo propagation.
@@ -1960,67 +1960,142 @@ static __device__ void push_photon(const struct harm::Header *header, struct pho
     }
 }
 
-static __device__ std::tuple<double, double, double>
-push_photon_step(const struct harm::Header *header, struct photon::Photon *photon, double dl) {
+static __device__ __forceinline__ std::tuple<double, double, double> push_photon_step(
+    const struct harm::Header *__restrict__ header, struct photon::Photon *__restrict__ photon, double dl) {
     const double dl_2 = 0.5 * dl;
-    double k[consts::n_dim];
 
-#pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        double dk = photon->dkdlam[i] * dl_2;
-        photon->k[i] += dk;
-        k[i] = photon->k[i] + dk;
-        photon->x[i] += photon->k[i] * dl;
+    /* Use FMA to reduce temps and rounding; keep kh in registers for the corrector loop. */
+    double k0, k1, k2, k3;     /* provisional k (k_old + dl * dkdlam) */
+    double kh0, kh1, kh2, kh3; /* mid/half-step k (k_old + 0.5*dl * dkdlam) */
+
+    /* Load once; write x and photon->k once. */
+    {
+        /* i = 0 */
+        double dk0 = photon->dkdlam[0] * dl_2;
+        kh0 = fma(dl_2, photon->dkdlam[0], photon->k[0]); /* k + 0.5 dl dkd */
+        k0 = kh0 + dk0;                                   /* k + dl dkd */
+        photon->x[0] = fma(kh0, dl, photon->x[0]);        /* x += kh * dl */
+        photon->k[0] = kh0;                               /* store mid-k once */
+
+        /* i = 1 */
+        double dk1 = photon->dkdlam[1] * dl_2;
+        kh1 = fma(dl_2, photon->dkdlam[1], photon->k[1]);
+        k1 = kh1 + dk1;
+        photon->x[1] = fma(kh1, dl, photon->x[1]);
+        photon->k[1] = kh1;
+
+        /* i = 2 */
+        double dk2 = photon->dkdlam[2] * dl_2;
+        kh2 = fma(dl_2, photon->dkdlam[2], photon->k[2]);
+        k2 = kh2 + dk2;
+        photon->x[2] = fma(kh2, dl, photon->x[2]);
+        photon->k[2] = kh2;
+
+        /* i = 3 */
+        double dk3 = photon->dkdlam[3] * dl_2;
+        kh3 = fma(dl_2, photon->dkdlam[3], photon->k[3]);
+        k3 = kh3 + dk3;
+        photon->x[3] = fma(kh3, dl, photon->x[3]);
+        photon->k[3] = kh3;
     }
 
+    /* Connection at new position (depends only on x) */
     double lconn[lconn_flat_len];
-
     get_connection(header, photon->x, lconn);
 
+/* Helper */
+#define L(i, j, k) lconn[lconn_flat_idx((i), (j), (k))]
+
+    /* Iterative corrector on k */
     double err;
     int iter = 0;
 
+    /* Keep local dkdlam; write back once after convergence. */
+    double dkd0 = photon->dkdlam[0];
+    double dkd1 = photon->dkdlam[1];
+    double dkd2 = photon->dkdlam[2];
+    double dkd3 = photon->dkdlam[3];
+
     do {
         ++iter;
-
         err = 0.0;
 
-#pragma unroll
-        for (int i = 0; i < consts::n_dim; ++i) {
-            photon->dkdlam[i] =
-                -2.0 * (k[0] * (lconn[lconn_flat_idx(i, 0, 1)] * k[1] + lconn[lconn_flat_idx(i, 0, 2)] * k[2] +
-                                lconn[lconn_flat_idx(i, 0, 3)] * k[3]) +
-                        k[1] * (lconn[lconn_flat_idx(i, 1, 2)] * k[2] + lconn[lconn_flat_idx(i, 1, 3)] * k[3]) +
-                        lconn[lconn_flat_idx(i, 2, 3)] * k[2] * k[3]);
-            photon->dkdlam[i] -=
-                (lconn[lconn_flat_idx(i, 0, 0)] * k[0] * k[0] + lconn[lconn_flat_idx(i, 1, 1)] * k[1] * k[1] +
-                 lconn[lconn_flat_idx(i, 2, 2)] * k[2] * k[2] + lconn[lconn_flat_idx(i, 3, 3)] * k[3] * k[3]);
+        /* Precompute squares & pairwise products once per iteration. */
+        const double k0k0 = k0 * k0, k1k1 = k1 * k1, k2k2 = k2 * k2, k3k3 = k3 * k3;
+        const double k0k1 = k0 * k1, k0k2 = k0 * k2, k0k3 = k0 * k3;
+        const double k1k2 = k1 * k2, k1k3 = k1 * k3, k2k3 = k2 * k3;
 
-            double old_k = k[i];
-            k[i] = fma(dl_2, photon->dkdlam[i], photon->k[i]);
-            err += fabs((old_k - k[i]) / (k[i] + consts::eps));
+        /* i = 0 */
+        {
+            const double quad = L(0, 0, 0) * k0k0 + L(0, 1, 1) * k1k1 + L(0, 2, 2) * k2k2 + L(0, 3, 3) * k3k3;
+            const double cross2 = L(0, 0, 1) * k0k1 + L(0, 0, 2) * k0k2 + L(0, 0, 3) * k0k3 + L(0, 1, 2) * k1k2 +
+                                  L(0, 1, 3) * k1k3 + L(0, 2, 3) * k2k3;
+
+            dkd0 = -(quad + 2.0 * cross2);
+
+            const double old = k0;
+            k0 = fma(dl_2, dkd0, kh0);
+            err += fabs((old - k0) / (k0 + consts::eps));
+        }
+
+        /* i = 1 */
+        {
+            const double quad = L(1, 0, 0) * k0k0 + L(1, 1, 1) * k1k1 + L(1, 2, 2) * k2k2 + L(1, 3, 3) * k3k3;
+            const double cross2 = L(1, 0, 1) * k0k1 + L(1, 0, 2) * k0k2 + L(1, 0, 3) * k0k3 + L(1, 1, 2) * k1k2 +
+                                  L(1, 1, 3) * k1k3 + L(1, 2, 3) * k2k3;
+
+            dkd1 = -(quad + 2.0 * cross2);
+
+            const double old = k1;
+            k1 = fma(dl_2, dkd1, kh1);
+            err += fabs((old - k1) / (k1 + consts::eps));
+        }
+
+        /* i = 2 */
+        {
+            const double quad = L(2, 0, 0) * k0k0 + L(2, 1, 1) * k1k1 + L(2, 2, 2) * k2k2 + L(2, 3, 3) * k3k3;
+            const double cross2 = L(2, 0, 1) * k0k1 + L(2, 0, 2) * k0k2 + L(2, 0, 3) * k0k3 + L(2, 1, 2) * k1k2 +
+                                  L(2, 1, 3) * k1k3 + L(2, 2, 3) * k2k3;
+
+            dkd2 = -(quad + 2.0 * cross2);
+
+            const double old = k2;
+            k2 = fma(dl_2, dkd2, kh2);
+            err += fabs((old - k2) / (k2 + consts::eps));
+        }
+
+        /* i = 3 */
+        {
+            const double quad = L(3, 0, 0) * k0k0 + L(3, 1, 1) * k1k1 + L(3, 2, 2) * k2k2 + L(3, 3, 3) * k3k3;
+            const double cross2 = L(3, 0, 1) * k0k1 + L(3, 0, 2) * k0k2 + L(3, 0, 3) * k0k3 + L(3, 1, 2) * k1k2 +
+                                  L(3, 1, 3) * k1k3 + L(3, 2, 3) * k2k3;
+
+            dkd3 = -(quad + 2.0 * cross2);
+
+            const double old = k3;
+            k3 = fma(dl_2, dkd3, kh3);
+            err += fabs((old - k3) / (k3 + consts::eps));
         }
     } while (err > consts::e_tol && iter < consts::max_iter);
 
-#pragma unroll
-    for (int i = 0; i < consts::n_dim; ++i) {
-        photon->k[i] = k[i];
-    }
+    /* Commit results once */
+    photon->k[0] = k0;
+    photon->k[1] = k1;
+    photon->k[2] = k2;
+    photon->k[3] = k3;
+    photon->dkdlam[0] = dkd0;
+    photon->dkdlam[1] = dkd1;
+    photon->dkdlam[2] = dkd2;
+    photon->dkdlam[3] = dkd3;
 
-    double g_cov_0[consts::n_dim];
+    /* Energy check: gcov_0 and -dot(k, gcov_0) */
+    double g0[consts::n_dim];
+    cuda_harm::gcov_0_func(header, photon->x, g0);
 
-    cuda_harm::gcov_0_func(header, photon->x, g_cov_0);
+    const double e_1 = -(k0 * g0[0] + k1 * g0[1] + k2 * g0[2] + k3 * g0[3]);
+    const double err_e = fabs((e_1 - photon->e_0_s) / photon->e_0_s);
 
-    /* clang-format off */
-    double e_1 = -(
-        photon->k[0] * g_cov_0[0]
-      + photon->k[1] * g_cov_0[1]
-      + photon->k[2] * g_cov_0[2]
-      + photon->k[3] * g_cov_0[3]);
-    /* clang-format on */
-
-    double err_e = fabs((e_1 - photon->e_0_s) / photon->e_0_s);
-
+#undef L
     return {e_1, err, err_e};
 }
 
