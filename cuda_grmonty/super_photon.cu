@@ -1127,7 +1127,8 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        double *alpha_scatti,
                                        double *alpha_absi,
                                        double *bi) {
-    __shared__ double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         if (photon_state[tid] != PhotonState::New) {
             continue;
@@ -1321,7 +1322,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
     const double hbar = consts::hpl / (2.0 * CUDART_PI);
     const double d_tau_k = 2.0 * CUDART_PI * units->l_unit / (consts::me * consts::cl * consts::cl / hbar);
 
-    __shared__ double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
@@ -1408,6 +1409,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                                          double *d_tau_abs,
                                          double *bias) {
     double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         scatter_cond[tid] = false;
 
@@ -1547,7 +1549,7 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
                                             struct PhotonArray photon_p,
                                             struct harm::FluidParams *fluid_params,
                                             double *g_cov) {
-    __shared__ double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
+    double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         if ((photon_state[tid] != PhotonState::Initialized && photon_state[tid] != PhotonState::Tracked) ||
