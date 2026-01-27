@@ -80,9 +80,9 @@ Input parameters:
 
 System:
 
-- Arch Linux (6.15.9-arch1-1)
-- CUDA 12.9
-- clang 20.1.8
+- Arch Linux (6.18.6-arch1-1)
+- CUDA 13.1
+- clang 21.1.6
 
 Hardware:
 
@@ -99,6 +99,7 @@ Hardware:
 | [v0.1.1](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.1) |                          | 137939              | 114.95               |
 | [v0.1.2](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.2) |                          | 246538              | 64.91                |
 | [v0.1.3](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.3) |                          | 307186              | 52.41                |
+| [v0.1.4](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.4) |                          | 352152              | 45.88                |
 
 ## Development
 
