@@ -36,12 +36,12 @@ static __device__ double hc_klein_nishina(double w);
 /**
  * @brief Compute the differential electron distribution with respect to Lorentz factor γ_e (CUDA device version).
  *
- * @param theta_e Dimensionless electron temperature (θ_e = k * T_e / (m_e * c^2)).
+ * @param theta_k2f Temperature normalization θ_e K_2(1 / θ_e).
  * @param gamma_e Electron Lorentz factor.
  *
  * @return Probability density dN/dγ_e for electrons at the given temperature.
  */
-static __device__ double dnd_gamma_e(double theta_e, double gamma_e);
+static __device__ double dnd_gamma_e(double theta_k2f, double gamma_e, double theta_e);
 
 /**
  * @brief Compute boosted scattering cross-section contribution for given photon–electron kinematics
@@ -139,11 +139,19 @@ static __device__ double total_compton_cross_num(double w, double theta_e) {
        angle between k and u_e, and the angle k is assumed to lie,
        wlog, along the z axis */
     double cross = 0.0;
+    double k2f;
+
+    if (theta_e > 1.0e-2) {
+        k2f = cyl_bessel_k2(1.0 / theta_e) * exp(1.0 / theta_e);
+    } else {
+        k2f = sqrt(CUDART_PI * theta_e / 2.0);
+    }
+    const double theta_k2f = theta_e * k2f;
 
     for (double mu_e = -1.0 + 0.5 * d_mu_e; mu_e < 1.0; mu_e += d_mu_e) {
         for (double gamma_e = 1.0 + 0.5 * d_gamma_e; gamma_e < 1.0 + consts::hotcross::max_gamma * theta_e;
              gamma_e += d_gamma_e) {
-            double f = 0.5 * dnd_gamma_e(theta_e, gamma_e);
+            double f = 0.5 * dnd_gamma_e(theta_k2f, gamma_e, theta_e);
 
             cross += d_mu_e * d_gamma_e * boostcross(w, mu_e, gamma_e) * f;
 
@@ -165,16 +173,8 @@ static __device__ double hc_klein_nishina(double w) {
                           (1.0 + w) / ((1.0 + 2.0 * w) * (1.0 + 2.0 * w)));
 }
 
-static __device__ double dnd_gamma_e(double theta_e, double gamma_e) {
-    double k2f;
-
-    if (theta_e > 1.0e-2) {
-        k2f = cyl_bessel_k2(1.0 / theta_e) * exp(1.0 / theta_e);
-    } else {
-        k2f = sqrt(CUDART_PI * theta_e / 2.0);
-    }
-
-    return ((gamma_e * sqrt(gamma_e * gamma_e - 1.) / (theta_e * k2f)) * exp(-(gamma_e - 1.) / theta_e));
+static __device__ double dnd_gamma_e(double theta_k2f, double gamma_e, double theta_e) {
+    return gamma_e * sqrt(gamma_e * gamma_e - 1.0) / theta_k2f * exp(-(gamma_e - 1.0) / theta_e);
 }
 
 static __device__ double boostcross(double w, double mu_e, double gamma_e) {
