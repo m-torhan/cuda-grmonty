@@ -1872,15 +1872,14 @@ push_photon(const struct harm::Header *__restrict__ header, struct photon::Photo
         return;
     }
 
-    double dl_stack[8] = {dl};
-    int depth_stack[8] = {0};
-    int n = 0;
+    double current_dl = dl;
+    int depth = 0;
 
     double x_cpy[consts::n_dim];
     double k_cpy[consts::n_dim];
     double dk_cpy[consts::n_dim];
 
-    while (n >= 0) {
+    while (true) {
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
             x_cpy[i] = photon->x[i];
@@ -1888,22 +1887,20 @@ push_photon(const struct harm::Header *__restrict__ header, struct photon::Photo
             dk_cpy[i] = photon->dkdlam[i];
         }
 
-        auto [e_1, err, err_e] = push_photon_step(header, photon, dl_stack[n]);
+        auto [e_1, err, err_e] = push_photon_step(header, photon, current_dl);
 
-        if (depth_stack[n] < 7 && (err_e > 1.0e-4 || err > consts::e_tol || !isfinite(err))) {
+        if (depth < 7 && (err_e > 1.0e-4 || err > consts::e_tol || !isfinite(err))) {
 #pragma unroll
             for (int i = 0; i < consts::n_dim; ++i) {
                 photon->x[i] = x_cpy[i];
                 photon->k[i] = k_cpy[i];
                 photon->dkdlam[i] = dk_cpy[i];
             }
-            dl_stack[n] = dl_stack[n] / 2.0;
-            dl_stack[n + 1] = dl_stack[n];
-            depth_stack[n] = depth_stack[n] + 1;
-            depth_stack[n + 1] = depth_stack[n];
+            current_dl *= 0.5;
+            ++depth;
         } else {
             photon->e_0_s = e_1;
-            --n;
+            break;
         }
     }
 }
