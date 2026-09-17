@@ -8,6 +8,7 @@
 #include <curand_kernel.h>
 #include <math_constants.h>
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -51,6 +52,11 @@ __device__ int dev_n_super_photon_scatt = 0;
  * @brief Device pointer to simulation header.
  */
 static struct harm::Header *dev_header;
+
+/**
+ * @brief Precomputed radial coordinate at the event horizon.
+ */
+static double tracking_x1_min;
 
 /**
  * @brief Device copy of simulation data (geometry, fluid, zones).
@@ -148,12 +154,14 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
  * termination criteria.
  *
  * @param rng_state    Device array of random number generator states for stochastic checks.
- * @param header       Pointer to simulation header (grid, units, parameters).
+ * @param x1_min       Radial coordinate at the event horizon.
+ * @param x1_max       Maximum radial coordinate to track.
  * @param photon       Device array of photons to check.
  * @param photon_state Device array of photon states, updated if photon should stop.
  */
 static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ rng_state,
-                                      const struct harm::Header *__restrict__ header,
+                                      double x1_min,
+                                      double x1_max,
                                       struct PhotonArray photon,
                                       enum PhotonState *__restrict__ photon_state);
 
@@ -461,6 +469,8 @@ void alloc_memory(const struct harm::Header &header,
                   const ndarray::NDArray<double, 2> &hotcross_table,
                   const std::array<double, consts::n_e_samp + 1> &f,
                   const std::array<double, consts::n_e_samp + 1> &k2) {
+    tracking_x1_min = std::log(1.0 + std::sqrt(1.0 - header.a * header.a));
+
     gpuErrchk(cudaMalloc((void **)&dev_header, sizeof(struct harm::Header)));
     gpuErrchk(cudaMalloc((void **)&dev_units, consts::cuda::threads_per_grid * sizeof(struct harm::Units)));
     gpuErrchk(cudaMalloc((void **)&dev_data.k_rho, sizeof(double) * data.k_rho.size()));
@@ -523,6 +533,8 @@ void track_super_photons(double bias_norm,
                          int *pos_hist) {
     const int grid_dim = consts::cuda::grid_dim;
     const int block_dim = consts::cuda::block_dim;
+    const double x1_min = tracking_x1_min;
+    const double x1_max = consts::x1_max;
 
     bool record_trajectories = pos_hist != nullptr;
 
@@ -786,8 +798,11 @@ void track_super_photons(double bias_norm,
         }
         ++n_iter;
 
-        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_rng_state[stream_idx], dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx]);
+        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
+                                                                       x1_min,
+                                                                       x1_max,
+                                                                       dev_photon[stream_idx],
+                                                                       dev_photon_state[stream_idx]);
 
         for (int i = 0; i < consts::n_dim; ++i) {
             gpuErrchk(cudaMemcpyAsync(dev_photon_2[stream_idx].x[i],
@@ -824,8 +839,11 @@ void track_super_photons(double bias_norm,
             dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx], dev_step_size[stream_idx]);
 
         /* check stop criterion */
-        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_rng_state[stream_idx], dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx]);
+        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
+                                                                       x1_min,
+                                                                       x1_max,
+                                                                       dev_photon[stream_idx],
+                                                                       dev_photon_state[stream_idx]);
 
         /* allow photon to interact with matter */
         interact_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
@@ -1177,19 +1195,17 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
 }
 
 static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ rng_state,
-                                      const struct harm::Header *__restrict__ header,
+                                      double x1_min,
+                                      double x1_max,
                                       struct PhotonArray photon,
                                       enum PhotonState *__restrict__ photon_state) {
-    double rh_ = 1.0 + sqrt(1.0 - header->a * header->a);
-    double x1_min_ = log(rh_);
-    double x1_max = log(consts::r_max);
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         if (photon_state[tid] != PhotonState::Initialized) {
             continue;
         }
 
         /* TODO: reduce branching */
-        if (photon.x[1][tid] < x1_min_) {
+        if (photon.x[1][tid] < x1_min) {
             /* stop at event horizon */
             photon_state[tid] = PhotonState::Tracked;
             continue;
