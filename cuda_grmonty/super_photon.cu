@@ -204,6 +204,7 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
  * @param photon_state Device array of photon states.
  * @param dl           Device array to store path length increments for each photon.
  */
+template <bool calculate_step>
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
                                    curandStatePhilox4_32_10_t *__restrict__ rng_state,
                                    double x1_min,
@@ -735,29 +736,35 @@ void track_super_photons(double bias_norm,
         }
         ++n_iter;
 
-        step_size<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_header,
-            dev_rng_state[stream_idx],
-            x1_min,
-            x1_max,
-            dev_photon[stream_idx],
-            dev_photon_state[stream_idx],
-            dev_step_size[stream_idx]);
-
         if (record_trajectories) {
+            step_size<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
+                dev_header,
+                dev_rng_state[stream_idx],
+                x1_min,
+                x1_max,
+                dev_photon[stream_idx],
+                dev_photon_state[stream_idx],
+                dev_step_size[stream_idx]);
             record_photon_position<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
                 dev_photon[stream_idx], dev_photon_state[stream_idx], dev_pos_hist);
+            push_photon<false><<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
+                                                                               dev_rng_state[stream_idx],
+                                                                               x1_min,
+                                                                               x1_max,
+                                                                               dev_photon[stream_idx],
+                                                                               dev_photon_2[stream_idx],
+                                                                               dev_photon_state[stream_idx],
+                                                                               dev_step_size[stream_idx]);
+        } else {
+            push_photon<true><<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
+                                                                              dev_rng_state[stream_idx],
+                                                                              x1_min,
+                                                                              x1_max,
+                                                                              dev_photon[stream_idx],
+                                                                              dev_photon_2[stream_idx],
+                                                                              dev_photon_state[stream_idx],
+                                                                              dev_step_size[stream_idx]);
         }
-
-        push_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_header,
-            dev_rng_state[stream_idx],
-            x1_min,
-            x1_max,
-            dev_photon[stream_idx],
-            dev_photon_2[stream_idx],
-            dev_photon_state[stream_idx],
-            dev_step_size[stream_idx]);
 
         /* allow photon to interact with matter */
         interact_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
@@ -1107,6 +1114,7 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
     }
 }
 
+template <bool calculate_step>
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
                                    curandStatePhilox4_32_10_t *__restrict__ rng_state,
                                    double x1_min,
@@ -1127,6 +1135,48 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
             .e_0_s = photon.e_0_s[tid],
         };
 
+        double photon_step = step_size[tid];
+        if constexpr (calculate_step) {
+            if (p.x[1] < x1_min) {
+                photon_state[tid] = PhotonState::Tracked;
+                continue;
+            }
+
+            if (p.x[1] > x1_max) {
+                if (photon.w[tid] < consts::weight_min) {
+                    if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                        photon.w[tid] *= consts::roulette;
+                    } else {
+                        photon.w[tid] = 0.0;
+                    }
+                }
+                photon_state[tid] = PhotonState::Tracked;
+                continue;
+            }
+
+            if (photon.w[tid] < consts::weight_min) {
+                if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                    photon.w[tid] *= consts::roulette;
+                } else {
+                    photon.w[tid] = 0.0;
+                    photon_state[tid] = PhotonState::Tracked;
+                    continue;
+                }
+            }
+
+            const double dl_x_1 = consts::step_eps * p.x[1] / (fabs(p.k[1]) + consts::eps);
+            const double dl_x_2 = consts::step_eps * fmin(p.x[2], header->x_stop[2] - p.x[2]) /
+                                  (fabs(p.k[2]) + consts::eps);
+            const double dl_x_3 = consts::step_eps / (fabs(p.k[3]) + consts::eps);
+
+            const double i_dl_x_1 = 1.0 / (fabs(dl_x_1) + consts::eps);
+            const double i_dl_x_2 = 1.0 / (fabs(dl_x_2) + consts::eps);
+            const double i_dl_x_3 = 1.0 / (fabs(dl_x_3) + consts::eps);
+
+            photon_step = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
+            step_size[tid] = photon_step;
+        }
+
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
             photon_prev.x[i][tid] = p.x[i];
@@ -1135,7 +1185,7 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
         }
         photon_prev.e_0_s[tid] = p.e_0_s;
 
-        push_photon(header, &p, step_size[tid]);
+        push_photon(header, &p, photon_step);
 
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
