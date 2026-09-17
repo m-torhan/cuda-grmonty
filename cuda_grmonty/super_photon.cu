@@ -120,7 +120,7 @@ static __global__ void load_validate_photon(struct PhotonArray photon,
  * @param photon_state Device array of photon states.
  * @param n_step       Device array for photon step counters.
  * @param fluid_n_e    Device array of local electron number densities.
- * @param theta        Device array of local electron temperatures (theta_e).
+ * @param sin_theta    Device array of local pitch-angle sines.
  * @param nu           Device array of photon frequencies in the fluid frame.
  * @param alpha_scatti Device array of inverse scattering opacities.
  * @param alpha_absi   Device array of inverse absorption opacities.
@@ -135,7 +135,7 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        enum PhotonState *__restrict__ photon_state,
                                        int *n_step,
                                        double *fluid_n_e,
-                                       double *theta,
+                                       double *sin_theta,
                                        double *nu,
                                        double *alpha_scatti,
                                        double *alpha_absi,
@@ -208,7 +208,7 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
  * @param step_size     Device array of photon step sizes.
  * @param bias_norm     Bias normalization factor.
  * @param fluid_n_e     Device array of local electron number densities.
- * @param theta         Device array of local electron temperatures.
+ * @param sin_theta     Device array of local pitch-angle sines.
  * @param nu            Device array of photon frequencies in the fluid frame.
  * @param alpha_scatti  Device array of inverse scattering opacities.
  * @param alpha_absi    Device array of inverse absorption opacities.
@@ -227,7 +227,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
                                        double *__restrict__ step_size,
                                        double bias_norm,
                                        double *__restrict__ fluid_n_e,
-                                       double *__restrict__ theta,
+                                       double *__restrict__ sin_theta,
                                        double *__restrict__ nu,
                                        double *__restrict__ alpha_scatti,
                                        double *__restrict__ alpha_absi,
@@ -258,7 +258,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
  * @param g_cov         Device array for metric connection coefficients.
  * @param step_size     Device array of photon step sizes.
  * @param bias_norm     Photon weight bias normalization factor.
- * @param theta         Device array of electron temperatures (theta_e).
+ * @param sin_theta     Device array of local pitch-angle sines.
  * @param nu            Device array of photon frequencies in the fluid frame.
  * @param alpha_scatti  Device array of inverse scattering opacities.
  * @param alpha_absi    Device array of inverse absorption opacities.
@@ -282,7 +282,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                                          double *g_cov,
                                          double *step_size,
                                          double bias_norm,
-                                         double *theta,
+                                         double *sin_theta,
                                          double *nu,
                                          double *alpha_scatti,
                                          double *alpha_absi,
@@ -542,7 +542,7 @@ void track_super_photons(double bias_norm,
 
     double *dev_fluid_n_e[n_streams];
 
-    double *dev_theta[n_streams];
+    double *dev_sin_theta[n_streams];
     double *dev_nu[n_streams];
     double *dev_alpha_scatti[n_streams];
     double *dev_alpha_absi[n_streams];
@@ -612,7 +612,7 @@ void track_super_photons(double bias_norm,
 
         gpuErrchk(cudaMalloc((void **)&dev_fluid_n_e[i], n_photons * sizeof(double)));
 
-        gpuErrchk(cudaMalloc((void **)&dev_theta[i], n_photons * sizeof(double)));
+        gpuErrchk(cudaMalloc((void **)&dev_sin_theta[i], n_photons * sizeof(double)));
         gpuErrchk(cudaMalloc((void **)&dev_nu[i], n_photons * sizeof(double)));
         gpuErrchk(cudaMalloc((void **)&dev_alpha_scatti[i], n_photons * sizeof(double)));
         gpuErrchk(cudaMalloc((void **)&dev_alpha_absi[i], n_photons * sizeof(double)));
@@ -778,7 +778,7 @@ void track_super_photons(double bias_norm,
                                                                              dev_photon_state[stream_idx],
                                                                              dev_n_step[stream_idx],
                                                                              dev_fluid_n_e[stream_idx],
-                                                                             dev_theta[stream_idx],
+                                                                             dev_sin_theta[stream_idx],
                                                                              dev_nu[stream_idx],
                                                                              dev_alpha_scatti[stream_idx],
                                                                              dev_alpha_absi[stream_idx],
@@ -838,7 +838,7 @@ void track_super_photons(double bias_norm,
                                                                          dev_step_size[stream_idx],
                                                                          bias_norm,
                                                                          dev_fluid_n_e[stream_idx],
-                                                                         dev_theta[stream_idx],
+                                                                         dev_sin_theta[stream_idx],
                                                                          dev_nu[stream_idx],
                                                                          dev_alpha_scatti[stream_idx],
                                                                          dev_alpha_absi[stream_idx],
@@ -862,7 +862,7 @@ void track_super_photons(double bias_norm,
                                                                            dev_g_cov[stream_idx],
                                                                            dev_step_size[stream_idx],
                                                                            bias_norm,
-                                                                           dev_theta[stream_idx],
+                                                                           dev_sin_theta[stream_idx],
                                                                            dev_nu[stream_idx],
                                                                            dev_alpha_scatti[stream_idx],
                                                                            dev_alpha_absi[stream_idx],
@@ -1030,7 +1030,7 @@ void track_super_photons(double bias_norm,
 
         gpuErrchk(cudaFree(dev_fluid_n_e[i]));
 
-        gpuErrchk(cudaFree(dev_theta[i]));
+        gpuErrchk(cudaFree(dev_sin_theta[i]));
         gpuErrchk(cudaFree(dev_nu[i]));
         gpuErrchk(cudaFree(dev_alpha_scatti[i]));
         gpuErrchk(cudaFree(dev_alpha_absi[i]));
@@ -1122,7 +1122,7 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        enum PhotonState *__restrict__ photon_state,
                                        int *n_step,
                                        double *fluid_n_e,
-                                       double *theta,
+                                       double *sin_theta,
                                        double *nu,
                                        double *alpha_scatti,
                                        double *alpha_absi,
@@ -1154,13 +1154,13 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
 
         fluid_n_e[tid] = fluid_params.n_e;
 
-        theta[tid] = cuda_radiation::bk_angle(
+        sin_theta[tid] = cuda_radiation::bk_sin_angle(
             photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
         nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
         alpha_scatti[tid] =
             cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
         alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-            nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
+            nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta[tid], tables.k2);
         bi[tid] = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
 
         double photon_dkdlam[consts::n_dim];
@@ -1311,7 +1311,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
                                        double *__restrict__ step_size,
                                        double bias_norm,
                                        double *__restrict__ fluid_n_e,
-                                       double *__restrict__ theta,
+                                       double *__restrict__ sin_theta,
                                        double *__restrict__ nu,
                                        double *__restrict__ alpha_scatti,
                                        double *__restrict__ alpha_absi,
@@ -1355,7 +1355,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
         bool bound_flag = fluid_params.n_e == 0.0;
 
         if (!bound_flag) {
-            theta[tid] = cuda_radiation::bk_angle(
+            sin_theta[tid] = cuda_radiation::bk_sin_angle(
                 photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
             nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
         }
@@ -1374,7 +1374,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
             alpha_scatti[tid] = alpha_scattf;
 
             double alpha_absf = cuda_radiation::alpha_inv_abs(
-                nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta[tid], tables.k2);
+                nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta[tid], tables.k2);
             d_tau_abs[tid] = 0.5 * (alpha_absi[tid] + alpha_absf) * d_tau_k * step_size[tid];
             alpha_absi[tid] = alpha_absf;
 
@@ -1400,7 +1400,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                                          double *g_cov,
                                          double *step_size,
                                          double bias_norm,
-                                         double *theta,
+                                         double *sin_theta,
                                          double *nu,
                                          double *alpha_scatti,
                                          double *alpha_absi,
@@ -1506,7 +1506,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                 fluid_params[tid] = fluid_params_;
             }
 
-            theta[tid] = cuda_radiation::bk_angle(
+            sin_theta[tid] = cuda_radiation::bk_sin_angle(
                 photon_x, photon_k, fluid_params_.u_cov, fluid_params_.b_cov, fluid_params_.b, units->b_unit);
             nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params_.u_cov);
 
@@ -1517,7 +1517,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                 alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
                     nu[tid], fluid_params_.theta_e, fluid_params_.n_e, tables.hotcross_table);
                 alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, theta[tid], tables.k2);
+                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, sin_theta[tid], tables.k2);
             }
             bi[tid] = bias_func(bias_norm, fluid_params_.theta_e, photon.w[tid]);
 

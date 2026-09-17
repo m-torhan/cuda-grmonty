@@ -767,17 +767,16 @@ struct photon::InitPhoton HARMModel::sample_zone_photon(struct Zone &zone) {
              (jnu_mixed::f_eval(fluid_zone.theta_e, fluid_zone.b, nu, f_) / (weight + 1.0e-100)) / zone.dn_max);
 
     photon.w = weight;
-    double j_max = jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, std::numbers::pi / 2.0, k2_);
+    double j_max = jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, 1.0, k2_);
 
     double cos_th;
-    double th;
+    double sin_th;
     do {
         cos_th = 2.0 * monty_rand::uniform() - 1.0;
-        th = std::acos(cos_th);
+        sin_th = std::sqrt(std::max(0.0, 1.0 - cos_th * cos_th));
     } while (monty_rand::uniform() >
-             (jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, th, k2_) / j_max));
+             (jnu_mixed::synch(nu, fluid_zone.n_e, fluid_zone.theta_e, fluid_zone.b, sin_th, k2_) / j_max));
 
-    double sin_th = std::sqrt(1.0 - cos_th * cos_th);
     double phi = 2.0 * std::numbers::pi * monty_rand::uniform();
     double cos_phi = std::cos(phi);
     double sin_phi = std::sin(phi);
@@ -931,12 +930,12 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
     gcov_func(photon.x, g_cov);
     auto fluid_params = get_fluid_params(photon.x, g_cov);
 
-    double theta =
-        radiation::bk_angle(photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units_.b_unit);
+    double sin_theta = radiation::bk_sin_angle(
+        photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units_.b_unit);
     double nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
     double alpha_scatti = radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
     double alpha_absi =
-        radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+        radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta, k2_);
     double bi = bias_func(fluid_params.theta_e, photon.w);
 
     init_dkdlam(photon.x, photon.k, photon.dkdlam);
@@ -968,7 +967,7 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
             bool bound_flag = fluid_params.n_e == 0.0;
 
             if (!bound_flag) {
-                theta = radiation::bk_angle(
+                sin_theta = radiation::bk_sin_angle(
                     photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units_.b_unit);
                 nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
 
@@ -994,8 +993,8 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
                 d_tau_scatt = 0.5 * (alpha_scatti + alpha_scattf) * d_tau_k_ * dl;
                 alpha_scatti = alpha_scattf;
 
-                double alpha_absf =
-                    radiation::alpha_inv_abs(nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+                double alpha_absf = radiation::alpha_inv_abs(
+                    nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta, k2_);
                 d_tau_abs = 0.5 * (alpha_absi + alpha_absf) * d_tau_k_ * dl;
                 alpha_absi = alpha_absf;
 
@@ -1050,7 +1049,7 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
                     track_super_photon(photon_p);
                 }
 
-                theta = radiation::bk_angle(
+                sin_theta = radiation::bk_sin_angle(
                     photon.x, photon.k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units_.b_unit);
                 nu = radiation::fluid_nu(photon.x, photon.k, fluid_params.u_cov);
 
@@ -1061,7 +1060,7 @@ void HARMModel::track_super_photon(struct photon::Photon &photon) {
                     alpha_scatti =
                         radiation::alpha_inv_scatt(nu, fluid_params.theta_e, fluid_params.n_e, hotcross_table_);
                     alpha_absi = radiation::alpha_inv_abs(
-                        nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, theta, k2_);
+                        nu, fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta, k2_);
                 }
                 bi = bias_func(fluid_params.theta_e, photon.w);
             } else {

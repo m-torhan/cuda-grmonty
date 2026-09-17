@@ -76,7 +76,7 @@ double synch(double nu,
              double n_e,
              double theta_e,
              double b,
-             double theta,
+             double sin_theta,
              const std::array<double, consts::n_e_samp + 1> &k2_table) {
     if (theta_e < consts::theta_e_min) {
         return 0.0;
@@ -84,8 +84,7 @@ double synch(double nu,
 
     double k2 = k2_eval(theta_e, k2_table);
     double nu_c = consts::ee * b / (2.0 * std::numbers::pi * consts::me * consts::cl);
-    double sin_th = std::sin(theta);
-    double nu_s = (2.0 / 9.0) * nu_c * theta_e * theta_e * sin_th;
+    double nu_s = (2.0 / 9.0) * nu_c * theta_e * theta_e * sin_theta;
 
     if (nu > 1.0e12 * nu_s) {
         return 0.0;

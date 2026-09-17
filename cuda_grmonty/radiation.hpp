@@ -12,7 +12,7 @@
 namespace radiation {
 
 /**
- * @brief Compute the angle between photon, fluid velocity, and magnetic field in the fluid frame.
+ * @brief Compute the sine of the angle between the photon and magnetic field in the fluid frame.
  *
  * @param x      Photon position 4-vector.
  * @param k      Photon momentum 4-vector.
@@ -21,14 +21,14 @@ namespace radiation {
  * @param b      Magnetic field strength.
  * @param b_unit Unit vector along magnetic field direction.
  *
- * @return Angle between photon and magnetic field in the fluid frame.
+ * @return Sine of the angle between the photon and magnetic field in the fluid frame.
  */
-double bk_angle(const double (&x)[consts::n_dim],
-                const double (&k)[consts::n_dim],
-                const double (&u_cov)[consts::n_dim],
-                const double (&b_cov)[consts::n_dim],
-                double b,
-                double b_unit);
+double bk_sin_angle(const double (&x)[consts::n_dim],
+                    const double (&k)[consts::n_dim],
+                    const double (&u_cov)[consts::n_dim],
+                    const double (&b_cov)[consts::n_dim],
+                    double b,
+                    double b_unit);
 
 /**
  * @brief Compute the photon frequency in the local fluid frame.
@@ -57,12 +57,12 @@ double alpha_inv_scatt(double nu, double theta_e, double n_e, const ndarray::NDA
 /**
  * @brief Compute inverse absorption opacity (alpha^{-1}) for given photon parameters.
  *
- * @param nu       Photon frequency.
- * @param theta_e  Electron dimensionless temperature.
- * @param n_e      Electron number density.
- * @param b        Magnetic field strength.
- * @param theta    Pitch angle between photon and magnetic field.
- * @param k2_table Precomputed table of k2(theta_e) values for interpolation.
+ * @param nu        Photon frequency.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param n_e       Electron number density.
+ * @param b         Magnetic field strength.
+ * @param sin_theta Sine of the pitch angle between photon and magnetic field.
+ * @param k2_table  Precomputed table of k2(theta_e) values for interpolation.
  *
  * @return Inverse absorption opacity at specified parameters.
  */
@@ -70,7 +70,7 @@ double alpha_inv_abs(double nu,
                      double theta_e,
                      double n_e,
                      double b,
-                     double theta,
+                     double sin_theta,
                      const std::array<double, consts::n_e_samp + 1> &k2_table);
 
 }; /* namespace radiation */

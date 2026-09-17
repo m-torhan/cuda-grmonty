@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <algorithm>
 #include <cmath>
 
 #include "spdlog/spdlog.h"
@@ -29,12 +30,12 @@ static double b_nu_inv(double nu, double theta_e);
 /**
  * @brief Compute the inverse synchrotron emissivity j_ν^{-1}.
  *
- * @param nu       Photon frequency.
- * @param theta_e  Electron dimensionless temperature.
- * @param n_e      Electron number density.
- * @param b        Magnetic field strength.
- * @param theta    Pitch angle between photon and magnetic field.
- * @param k2_table Table of k2(theta_e) values for interpolation.
+ * @param nu        Photon frequency.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param n_e       Electron number density.
+ * @param b         Magnetic field strength.
+ * @param sin_theta Sine of the pitch angle between photon and magnetic field.
+ * @param k2_table  Table of k2(theta_e) values for interpolation.
  *
  * @return Inverse synchrotron emissivity at the specified parameters.
  */
@@ -42,7 +43,7 @@ static double jnu_inv(double nu,
                       double theta_e,
                       double n_e,
                       double b,
-                      double theta,
+                      double sin_theta,
                       const std::array<double, consts::n_e_samp + 1> &k2_table);
 
 /**
@@ -56,14 +57,14 @@ static double jnu_inv(double nu,
  */
 static double kappa_es(double nu, double theta_e, const ndarray::NDArray<double, 2> &hotcross_table);
 
-double bk_angle(const double (&x)[consts::n_dim],
-                const double (&k)[consts::n_dim],
-                const double (&u_cov)[consts::n_dim],
-                const double (&b_cov)[consts::n_dim],
-                double b,
-                double b_unit) {
+double bk_sin_angle(const double (&x)[consts::n_dim],
+                    const double (&k)[consts::n_dim],
+                    const double (&u_cov)[consts::n_dim],
+                    const double (&b_cov)[consts::n_dim],
+                    double b,
+                    double b_unit) {
     if (b == 0.0) {
-        return std::numbers::pi / 2.0;
+        return 1.0;
     }
 
     /* clang-format off */
@@ -83,7 +84,7 @@ double bk_angle(const double (&x)[consts::n_dim],
 
     mu = std::clamp(mu, -1.0, 1.0);
 
-    return std::acos(mu);
+    return std::sqrt(std::max(0.0, 1.0 - mu * mu));
 }
 
 double
@@ -110,9 +111,9 @@ double alpha_inv_abs(double nu,
                      double theta_e,
                      double n_e,
                      double b,
-                     double theta,
+                     double sin_theta,
                      const std::array<double, consts::n_e_samp + 1> &k2_table) {
-    double j = jnu_inv(nu, theta_e, n_e, b, theta, k2_table);
+    double j = jnu_inv(nu, theta_e, n_e, b, sin_theta, k2_table);
     double b_nu = b_nu_inv(nu, theta_e);
 
     return j / (b_nu + 1.0e-100);
@@ -132,9 +133,9 @@ static double jnu_inv(double nu,
                       double theta_e,
                       double n_e,
                       double b,
-                      double theta,
+                      double sin_theta,
                       const std::array<double, consts::n_e_samp + 1> &k2_table) {
-    double j = jnu_mixed::synch(nu, n_e, theta_e, b, theta, k2_table);
+    double j = jnu_mixed::synch(nu, n_e, theta_e, b, sin_theta, k2_table);
 
     return j / (nu * nu);
 }

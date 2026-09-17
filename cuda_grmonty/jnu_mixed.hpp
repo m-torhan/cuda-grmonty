@@ -23,12 +23,12 @@ void init_emiss_tables(std::array<double, consts::n_e_samp + 1> &f, std::array<d
 /**
  * @brief Compute synchrotron emissivity for a photon at a given frequency and fluid parameters.
  *
- * @param nu       Photon frequency.
- * @param n_e      Electron number density.
- * @param theta_e  Electron dimensionless temperature.
- * @param b        Magnetic field strength.
- * @param theta    Pitch angle.
- * @param k2_table Table of k2 values for interpolation.
+ * @param nu        Photon frequency.
+ * @param n_e       Electron number density.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param b         Magnetic field strength.
+ * @param sin_theta Sine of the pitch angle.
+ * @param k2_table  Table of k2 values for interpolation.
  *
  * @return Synchrotron emissivity at the given frequency.
  */
@@ -36,7 +36,7 @@ double synch(double nu,
              double n_e,
              double theta_e,
              double b,
-             double theta,
+             double sin_theta,
              const std::array<double, consts::n_e_samp + 1> &k2_table);
 
 /**

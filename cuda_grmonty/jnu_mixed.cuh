@@ -39,13 +39,13 @@ static __device__ double linear_interp_k2(double theta_e, const double *__restri
  * @param n_e      Electron number density.
  * @param theta_e  Electron dimensionless temperature.
  * @param b        Magnetic field strength.
- * @param theta    Pitch angle.
+ * @param sin_theta Sine of the pitch angle.
  * @param k2_table Pointer to k2 table in device memory.
  *
  * @return Synchrotron emissivity at the given frequency.
  */
 static __device__ double
-synch(double nu, double n_e, double theta_e, double b, double theta, const double *__restrict__ k2_table);
+synch(double nu, double n_e, double theta_e, double b, double sin_theta, const double *__restrict__ k2_table);
 
 static __device__ double k2_eval(double theta_e, const double *__restrict__ k2_table) {
     if (theta_e < consts::theta_e_min) {
@@ -59,15 +59,14 @@ static __device__ double k2_eval(double theta_e, const double *__restrict__ k2_t
 }
 
 static __device__ double
-synch(double nu, double n_e, double theta_e, double b, double theta, const double *__restrict__ k2_table) {
+synch(double nu, double n_e, double theta_e, double b, double sin_theta, const double *__restrict__ k2_table) {
     if (theta_e < consts::theta_e_min) {
         return 0.0;
     }
 
     double k2 = k2_eval(theta_e, k2_table);
     double nu_c = consts::ee * b / (2.0 * CUDART_PI * consts::me * consts::cl);
-    double sin_th = sin(theta);
-    double nu_s = (2.0 / 9.0) * nu_c * theta_e * theta_e * sin_th;
+    double nu_s = (2.0 / 9.0) * nu_c * theta_e * theta_e * sin_theta;
 
     if (nu > 1.0e12 * nu_s) {
         return 0.0;

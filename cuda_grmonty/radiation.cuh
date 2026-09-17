@@ -15,7 +15,7 @@
 namespace cuda_radiation {
 
 /**
- * @brief Compute the angle between photon, fluid velocity, and magnetic field in the fluid frame.
+ * @brief Compute the sine of the angle between the photon and magnetic field in the fluid frame.
  *
  * @param x      Photon position 4-vector.
  * @param k      Photon momentum 4-vector.
@@ -24,14 +24,14 @@ namespace cuda_radiation {
  * @param b      Magnetic field strength.
  * @param b_unit Unit vector along magnetic field direction.
  *
- * @return Angle between photon and magnetic field in the fluid frame.
+ * @return Sine of the angle between the photon and magnetic field in the fluid frame.
  */
-static __device__ double bk_angle(const double (&x)[consts::n_dim],
-                                  const double (&k)[consts::n_dim],
-                                  const double (&u_cov)[consts::n_dim],
-                                  const double (&b_cov)[consts::n_dim],
-                                  double b,
-                                  double b_unit);
+static __device__ double bk_sin_angle(const double (&x)[consts::n_dim],
+                                      const double (&k)[consts::n_dim],
+                                      const double (&u_cov)[consts::n_dim],
+                                      const double (&b_cov)[consts::n_dim],
+                                      double b,
+                                      double b_unit);
 
 /**
  * @brief Compute the photon frequency in the local fluid frame.
@@ -61,17 +61,17 @@ alpha_inv_scatt(double nu, double theta_e, double n_e, const double *__restrict_
 /**
  * @brief Compute inverse absorption opacity (alpha^{-1}) for given photon parameters.
  *
- * @param nu       Photon frequency.
- * @param theta_e  Electron dimensionless temperature.
- * @param n_e      Electron number density.
- * @param b        Magnetic field strength.
- * @param theta    Pitch angle between photon and magnetic field.
- * @param k2_table Pointer to precomputed k2 table on device memory.
+ * @param nu        Photon frequency.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param n_e       Electron number density.
+ * @param b         Magnetic field strength.
+ * @param sin_theta Sine of the pitch angle between photon and magnetic field.
+ * @param k2_table  Pointer to precomputed k2 table on device memory.
  *
  * @return Inverse absorption opacity at specified parameters.
  */
 static __device__ double
-alpha_inv_abs(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table);
+alpha_inv_abs(double nu, double theta_e, double n_e, double b, double sin_theta, const double *__restrict__ k2_table);
 
 /**
  * @brief Compute inverse Planck function B_ν^{-1}.
@@ -86,17 +86,17 @@ static __device__ double b_nu_inv(double nu, double theta_e);
 /**
  * @brief Compute inverse synchrotron emissivity j_ν^{-1}.
  *
- * @param nu       Photon frequency.
- * @param theta_e  Electron dimensionless temperature.
- * @param n_e      Electron number density.
- * @param b        Magnetic field strength.
- * @param theta    Pitch angle between photon and magnetic field.
- * @param k2_table Pointer to precomputed k2 table on device memory.
+ * @param nu        Photon frequency.
+ * @param theta_e   Electron dimensionless temperature.
+ * @param n_e       Electron number density.
+ * @param b         Magnetic field strength.
+ * @param sin_theta Sine of the pitch angle between photon and magnetic field.
+ * @param k2_table  Pointer to precomputed k2 table on device memory.
  *
  * @return Inverse synchrotron emissivity at specified parameters.
  */
 static __device__ double
-jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table);
+jnu_inv(double nu, double theta_e, double n_e, double b, double sin_theta, const double *__restrict__ k2_table);
 
 /**
  * @brief Compute electron scattering opacity (Thomson/Compton) using precomputed hotcross table.
@@ -109,14 +109,14 @@ jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const dou
  */
 static __device__ double kappa_es(double nu, double theta_e, const double *__restrict__ hotcross_table);
 
-static __device__ double bk_angle(const double (&x)[consts::n_dim],
-                                  const double (&k)[consts::n_dim],
-                                  const double (&u_cov)[consts::n_dim],
-                                  const double (&b_cov)[consts::n_dim],
-                                  double b,
-                                  double b_unit) {
+static __device__ double bk_sin_angle(const double (&x)[consts::n_dim],
+                                      const double (&k)[consts::n_dim],
+                                      const double (&u_cov)[consts::n_dim],
+                                      const double (&b_cov)[consts::n_dim],
+                                      double b,
+                                      double b_unit) {
     if (b == 0.0) {
-        return CUDART_PI / 2.0;
+        return 1.0;
     }
 
     /* clang-format off */
@@ -136,7 +136,7 @@ static __device__ double bk_angle(const double (&x)[consts::n_dim],
 
     mu = mu < -1.0 ? -1.0 : (mu > 1.0 ? 1.0 : mu);
 
-    return acos(mu);
+    return sqrt(fmax(0.0, 1.0 - mu * mu));
 }
 
 static __device__ double
@@ -161,8 +161,8 @@ alpha_inv_scatt(double nu, double theta_e, double n_e, const double *__restrict_
 }
 
 static __device__ double
-alpha_inv_abs(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table) {
-    double j = jnu_inv(nu, theta_e, n_e, b, theta, k2_table);
+alpha_inv_abs(double nu, double theta_e, double n_e, double b, double sin_theta, const double *__restrict__ k2_table) {
+    double j = jnu_inv(nu, theta_e, n_e, b, sin_theta, k2_table);
     double b_nu = b_nu_inv(nu, theta_e);
 
     return j / (b_nu + 1.0e-100);
@@ -179,8 +179,8 @@ static __device__ double b_nu_inv(double nu, double theta_e) {
 }
 
 static __device__ double
-jnu_inv(double nu, double theta_e, double n_e, double b, double theta, const double *__restrict__ k2_table) {
-    double j = cuda_jnu_mixed::synch(nu, n_e, theta_e, b, theta, k2_table);
+jnu_inv(double nu, double theta_e, double n_e, double b, double sin_theta, const double *__restrict__ k2_table) {
+    double j = cuda_jnu_mixed::synch(nu, n_e, theta_e, b, sin_theta, k2_table);
 
     return j / (nu * nu);
 }
