@@ -90,6 +90,18 @@ enum PhotonState : uint8_t {
 };
 
 /**
+ * @brief Initial data for a newly queued photon and its destination slot.
+ *
+ * Pending photons are packed contiguously for host-to-device transfer. The
+ * destination slot identifies the entry in the stream's persistent PhotonArray
+ * that the initialization kernels populate. It must be in [0, n_photons).
+ */
+struct PendingPhoton {
+    struct photon::InitPhoton photon; /* Initial position, momentum, and weight. */
+    int slot;                         /* Destination index in PhotonArray. */
+};
+
+/**
  * @brief Initialize CUDA random number generator states for super-photon propagation.
  *
  * Each thread initializes its own state for use in Monte Carlo sampling.
@@ -103,12 +115,14 @@ static __global__ void init_rng(curandStatePhilox4_32_10_t *__restrict__ rng_sta
  *
  * Checks if photons are in a valid state and prepares new photons for initialization.
  *
- * @param photon       Device array of existing photons.
- * @param photon_new   Device array for newly created photons.
- * @param photon_state Device array of photon states to track initialization and tracking.
+ * @param photon          Device array of existing photons.
+ * @param pending_photons Packed newly created photons and their destination slots.
+ * @param n_pending       Number of packed photons to load.
+ * @param photon_state    Device array of photon states to track initialization and tracking.
  */
 static __global__ void load_validate_photon(struct PhotonArray photon,
-                                            struct PhotonArray photon_new,
+                                            const struct PendingPhoton *__restrict__ pending_photons,
+                                            unsigned int n_pending,
                                             enum PhotonState *__restrict__ photon_state);
 
 /**
@@ -117,20 +131,22 @@ static __global__ void load_validate_photon(struct PhotonArray photon,
  * Computes initial local fluid properties, photon frequency, absorption, and scattering opacities, as well as bias
  * factors for weighted Monte Carlo propagation.
  *
- * @param header       Pointer to simulation header (grid, units, parameters).
- * @param data         Device copy of simulation data (geometry, fluid, zones).
- * @param units        Pointer to unit conversion structure.
- * @param tables       Precomputed tables (hotcross, k2, f) on device memory.
- * @param bias_norm    Bias normalization factor for photon weighting.
- * @param photon       Device array of photons to initialize.
- * @param photon_state Device array of photon states.
- * @param n_step       Device array for photon step counters.
- * @param fluid_n_e    Device array of local electron number densities.
- * @param sin_theta    Device array of local pitch-angle sines.
- * @param nu           Device array of photon frequencies in the fluid frame.
- * @param alpha_scatti Device array of inverse scattering opacities.
- * @param alpha_absi   Device array of inverse absorption opacities.
- * @param bi           Device array of photon bias factors.
+ * @param header          Pointer to simulation header (grid, units, parameters).
+ * @param data            Device copy of simulation data (geometry, fluid, zones).
+ * @param units           Pointer to unit conversion structure.
+ * @param tables          Precomputed tables (hotcross, k2, f) on device memory.
+ * @param bias_norm       Bias normalization factor for photon weighting.
+ * @param photon          Device array of photons to initialize.
+ * @param pending_photons Packed newly created photons and their destination slots.
+ * @param n_pending       Number of packed photons to initialize.
+ * @param photon_state    Device array of photon states.
+ * @param n_step          Device array for photon step counters.
+ * @param fluid_n_e       Device array of local electron number densities.
+ * @param sin_theta       Device array of local pitch-angle sines.
+ * @param nu              Device array of photon frequencies in the fluid frame.
+ * @param alpha_scatti    Device array of inverse scattering opacities.
+ * @param alpha_absi      Device array of inverse absorption opacities.
+ * @param bi              Device array of photon bias factors.
  */
 static __global__ void setup_variables(const struct harm::Header *__restrict__ header,
                                        const struct cuda_harm::Data data,
@@ -138,6 +154,8 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        const struct cuda_harm::Tables tables,
                                        double bias_norm,
                                        struct PhotonArray photon,
+                                       const struct PendingPhoton *__restrict__ pending_photons,
+                                       unsigned int n_pending,
                                        enum PhotonState *__restrict__ photon_state,
                                        int *n_step,
                                        double *fluid_n_e,
@@ -547,14 +565,14 @@ void track_super_photons(double bias_norm,
 
     constexpr unsigned int n_streams = 2;
 
-    struct PhotonArray photon_new[n_streams];
+    struct PendingPhoton *pending_photons[n_streams];
     enum PhotonState *__restrict__ photon_state[n_streams];
 
     curandStatePhilox4_32_10_t *dev_rng_state[n_streams];
 
     struct PhotonArray dev_photon[n_streams];
     enum PhotonState *dev_photon_state[n_streams];
-    struct PhotonArray dev_photon_new[n_streams];
+    struct PendingPhoton *dev_pending_photons[n_streams];
     struct PhotonArray dev_photon_2[n_streams];
 
     int *dev_n_step[n_streams];
@@ -592,18 +610,7 @@ void track_super_photons(double bias_norm,
 
         gpuErrchk(cudaMallocHost((void **)&photon_state[i], n_photons * sizeof(enum PhotonState)));
 
-        for (int j = 0; j < consts::n_dim; ++j) {
-            gpuErrchk(cudaMallocHost((void **)&photon_new[i].x[j], n_photons * sizeof(double)));
-            gpuErrchk(cudaMallocHost((void **)&photon_new[i].k[j], n_photons * sizeof(double)));
-        }
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].w, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].e, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].l, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].n_e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].theta_e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].b_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_new[i].n_scatt, n_photons * sizeof(int)));
+        gpuErrchk(cudaMallocHost((void **)&pending_photons[i], n_photons * sizeof(struct PendingPhoton)));
 
         for (int j = 0; j < n_photons; ++j) {
             photon_state[i][j] = PhotonState::Empty;
@@ -616,7 +623,7 @@ void track_super_photons(double bias_norm,
         /* TODO: optimize memory usage by allocating only the parts that are needed */
         alloc_photon_array(dev_photon[i], n_photons);
         gpuErrchk(cudaMalloc((void **)&dev_photon_state[i], n_photons * sizeof(enum PhotonState)));
-        alloc_photon_array(dev_photon_new[i], n_photons);
+        gpuErrchk(cudaMalloc((void **)&dev_pending_photons[i], n_photons * sizeof(struct PendingPhoton)));
         alloc_photon_array(dev_photon_2[i], n_photons);
         gpuErrchk(cudaMalloc((void **)&dev_n_step[i], n_photons * sizeof(int)));
 
@@ -687,23 +694,14 @@ void track_super_photons(double bias_norm,
         all_done = true;
         if (n_iter % 7 == 0) {
             photon_queue.dequeue_n(buffer, consts::cuda::n_photons - buffer.size());
+            unsigned int n_pending = 0;
 
             for (int i = 0; i < n_photons; ++i) {
                 if (photon_state[stream_idx][i] == PhotonState::Empty && !buffer.empty()) {
-                    photon::InitPhoton p = buffer.front();
+                    pending_photons[stream_idx][n_pending].photon = buffer.front();
+                    pending_photons[stream_idx][n_pending].slot = i;
+                    ++n_pending;
                     buffer.pop();
-                    for (int j = 0; j < consts::n_dim; ++j) {
-                        photon_new[stream_idx].x[j][i] = p.x[j];
-                        photon_new[stream_idx].k[j][i] = p.k[j];
-                    }
-                    photon_new[stream_idx].w[i] = p.w;
-                    photon_new[stream_idx].e[i] = p.e;
-                    photon_new[stream_idx].l[i] = p.l;
-                    photon_new[stream_idx].n_e_0[i] = p.n_e_0;
-                    photon_new[stream_idx].b_0[i] = p.b_0;
-                    photon_new[stream_idx].theta_e_0[i] = p.theta_e_0;
-                    photon_new[stream_idx].e_0[i] = p.e_0;
-                    photon_new[stream_idx].n_scatt[i] = p.n_scatt;
                     photon_state[stream_idx][i] = PhotonState::New;
                 }
                 if (photon_state[stream_idx][i] != PhotonState::Empty) {
@@ -715,83 +713,37 @@ void track_super_photons(double bias_norm,
                 break;
             }
 
-            /* load and validate new photons */
-            for (int i = 0; i < consts::n_dim; ++i) {
-                gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].x[i],
-                                          photon_new[stream_idx].x[i],
-                                          n_photons * sizeof(double),
+            if (n_pending > 0) {
+                gpuErrchk(cudaMemcpyAsync(dev_pending_photons[stream_idx],
+                                          pending_photons[stream_idx],
+                                          n_pending * sizeof(struct PendingPhoton),
                                           cudaMemcpyHostToDevice,
                                           streams[stream_idx]));
-                gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].k[i],
-                                          photon_new[stream_idx].k[i],
-                                          n_photons * sizeof(double),
-                                          cudaMemcpyHostToDevice,
-                                          streams[stream_idx]));
+
+                const int pend_grid_dim = (n_pending + block_dim - 1) / block_dim;
+                load_validate_photon<<<pend_grid_dim, block_dim, 0, streams[stream_idx]>>>(
+                    dev_photon[stream_idx],
+                    dev_pending_photons[stream_idx],
+                    n_pending,
+                    dev_photon_state[stream_idx]);
+
+                setup_variables<<<pend_grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
+                                                                                      dev_data,
+                                                                                      dev_units,
+                                                                                      dev_tables,
+                                                                                      bias_norm,
+                                                                                      dev_photon[stream_idx],
+                                                                                      dev_pending_photons[stream_idx],
+                                                                                      n_pending,
+                                                                                      dev_photon_state[stream_idx],
+                                                                                      dev_n_step[stream_idx],
+                                                                                      dev_fluid_n_e[stream_idx],
+                                                                                      dev_sin_theta[stream_idx],
+                                                                                      dev_nu[stream_idx],
+                                                                                      dev_alpha_scatti[stream_idx],
+                                                                                      dev_alpha_absi[stream_idx],
+                                                                                      dev_bi[stream_idx]);
             }
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].w,
-                                      photon_new[stream_idx].w,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].e,
-                                      photon_new[stream_idx].e,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].l,
-                                      photon_new[stream_idx].l,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].n_e_0,
-                                      photon_new[stream_idx].n_e_0,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].b_0,
-                                      photon_new[stream_idx].b_0,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].theta_e_0,
-                                      photon_new[stream_idx].theta_e_0,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].e_0,
-                                      photon_new[stream_idx].e_0,
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_new[stream_idx].n_scatt,
-                                      photon_new[stream_idx].n_scatt,
-                                      n_photons * sizeof(int),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-
-            gpuErrchk(cudaMemcpyAsync(dev_photon_state[stream_idx],
-                                      &photon_state[stream_idx][0],
-                                      n_photons * sizeof(enum PhotonState),
-                                      cudaMemcpyHostToDevice,
-                                      streams[stream_idx]));
-
-            load_validate_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-                dev_photon[stream_idx], dev_photon_new[stream_idx], dev_photon_state[stream_idx]);
-
-            setup_variables<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
-                                                                             dev_data,
-                                                                             dev_units,
-                                                                             dev_tables,
-                                                                             bias_norm,
-                                                                             dev_photon[stream_idx],
-                                                                             dev_photon_state[stream_idx],
-                                                                             dev_n_step[stream_idx],
-                                                                             dev_fluid_n_e[stream_idx],
-                                                                             dev_sin_theta[stream_idx],
-                                                                             dev_nu[stream_idx],
-                                                                             dev_alpha_scatti[stream_idx],
-                                                                             dev_alpha_absi[stream_idx],
-                                                                             dev_bi[stream_idx]);
         }
         ++n_iter;
 
@@ -938,21 +890,11 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaFree(dev_rng_state[i]));
 
         gpuErrchk(cudaFreeHost(photon_state[i]));
-
-        for (int j = 0; j < consts::n_dim; ++j) {
-            gpuErrchk(cudaFreeHost(photon_new[i].x[j]));
-            gpuErrchk(cudaFreeHost(photon_new[i].k[j]));
-        }
-        gpuErrchk(cudaFreeHost(photon_new[i].w));
-        gpuErrchk(cudaFreeHost(photon_new[i].e));
-        gpuErrchk(cudaFreeHost(photon_new[i].l));
-        gpuErrchk(cudaFreeHost(photon_new[i].n_e_0));
-        gpuErrchk(cudaFreeHost(photon_new[i].b_0));
-        gpuErrchk(cudaFreeHost(photon_new[i].theta_e_0));
+        gpuErrchk(cudaFreeHost(pending_photons[i]));
 
         free_photon_array(dev_photon[i]);
         gpuErrchk(cudaFree(dev_photon_state[i]));
-        free_photon_array(dev_photon_new[i]);
+        gpuErrchk(cudaFree(dev_pending_photons[i]));
         free_photon_array(dev_photon_2[i]);
         gpuErrchk(cudaFree(dev_n_step[i]));
 
@@ -998,31 +940,33 @@ static __global__ void init_rng(curandStatePhilox4_32_10_t *__restrict__ rng_sta
 }
 
 static __global__ void load_validate_photon(struct PhotonArray photon,
-                                            struct PhotonArray photon_new,
+                                            const struct PendingPhoton *__restrict__ pending_photons,
+                                            unsigned int n_pending,
                                             enum PhotonState *__restrict__ photon_state) {
-    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
-        if (photon_state[tid] != PhotonState::New) {
-            continue;
-        }
+    for (unsigned int pending_idx = threadIdx.x + blockIdx.x * blockDim.x; pending_idx < n_pending;
+         pending_idx += blockDim.x * gridDim.x) {
+        const int tid = pending_photons[pending_idx].slot;
+        const struct photon::InitPhoton photon_new = pending_photons[pending_idx].photon;
+        photon_state[tid] = PhotonState::New;
 
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
-            photon.x[i][tid] = photon_new.x[i][tid];
-            photon.k[i][tid] = photon_new.k[i][tid];
+            photon.x[i][tid] = photon_new.x[i];
+            photon.k[i][tid] = photon_new.k[i];
         }
-        photon.w[tid] = photon_new.w[tid];
-        photon.e[tid] = photon_new.e[tid];
-        photon.e_0[tid] = photon_new.e_0[tid];
-        photon.e_0_s[tid] = photon_new.e[tid];
-        photon.l[tid] = photon_new.l[tid];
+        photon.w[tid] = photon_new.w;
+        photon.e[tid] = photon_new.e;
+        photon.e_0[tid] = photon_new.e_0;
+        photon.e_0_s[tid] = photon_new.e;
+        photon.l[tid] = photon_new.l;
         photon.tau_scatt[tid] = 0.0;
         photon.tau_abs[tid] = 0.0;
-        photon.x1i[tid] = photon_new.x[1][tid];
-        photon.x2i[tid] = photon_new.x[2][tid];
-        photon.n_e_0[tid] = photon_new.n_e_0[tid];
-        photon.b_0[tid] = photon_new.b_0[tid];
-        photon.theta_e_0[tid] = photon_new.theta_e_0[tid];
-        photon.n_scatt[tid] = photon_new.n_scatt[tid];
+        photon.x1i[tid] = photon_new.x[1];
+        photon.x2i[tid] = photon_new.x[2];
+        photon.n_e_0[tid] = photon_new.n_e_0;
+        photon.b_0[tid] = photon_new.b_0;
+        photon.theta_e_0[tid] = photon_new.theta_e_0;
+        photon.n_scatt[tid] = photon_new.n_scatt;
 
         if (isnan(photon.x[0][tid]) || isnan(photon.x[1][tid]) || isnan(photon.x[2][tid]) || isnan(photon.x[3][tid]) ||
             isnan(photon.k[0][tid]) || isnan(photon.k[1][tid]) || isnan(photon.k[2][tid]) || isnan(photon.k[3][tid]) ||
@@ -1038,6 +982,8 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        const struct cuda_harm::Tables tables,
                                        double bias_norm,
                                        struct PhotonArray photon,
+                                       const struct PendingPhoton *__restrict__ pending_photons,
+                                       unsigned int n_pending,
                                        enum PhotonState *__restrict__ photon_state,
                                        int *n_step,
                                        double *fluid_n_e,
@@ -1048,7 +994,9 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        double *bi) {
     double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
-    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+    for (unsigned int pending_idx = threadIdx.x + blockIdx.x * blockDim.x; pending_idx < n_pending;
+         pending_idx += blockDim.x * gridDim.x) {
+        const int tid = pending_photons[pending_idx].slot;
         if (photon_state[tid] != PhotonState::New) {
             continue;
         }
