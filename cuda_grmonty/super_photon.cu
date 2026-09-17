@@ -1737,6 +1737,7 @@ static __device__ __forceinline__ void get_connection(const struct harm::Header 
 
     const double fac1 = r2 - a2cth2;
     const double fac2 = a2 + 2.0 * r2 + a2 * c2th;
+    const double fac2_sq = fac2 * fac2;
     const double inv_fac2 = 1.0 / fac2;
     const double inv_fac22 = inv_fac2 * inv_fac2;
     const double fac3 = a2 + r1 * (-2.0 + r1); /* a2 + r2 - 2*r1 */
@@ -1857,7 +1858,7 @@ static __device__ __forceinline__ void get_connection(const struct harm::Header 
 
         L(3, 2, 2) = -a * r1 * dthdx2_sq * irho2;
 
-        L(3, 2, 3) = dthdx2 * (0.25 * (1.0 / inv_fac22) * cth * inv_sth + a2 * r1 * s2th) * irho22;
+        L(3, 2, 3) = dthdx2 * (0.25 * fac2_sq * cth * inv_sth + a2 * r1 * s2th) * irho22;
 
         const double a3 = a2 * a;
         const double sth4 = sth2 * sth2;
