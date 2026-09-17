@@ -312,6 +312,8 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
  * @param photon_p     Device array for temporary photon storage.
  * @param fluid_params Fluid parameters at photon locations.
  * @param g_cov        Metric connection coefficients for Lorentz transformations.
+ * @param scattered    Compact output array containing only successfully scattered photons.
+ * @param n_scattered  Number of entries written to the compact output array.
  */
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restrict__ rng_state,
                                             const struct harm::Units *__restrict__ units,
@@ -320,7 +322,9 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
                                             bool *scatter_cond,
                                             struct PhotonArray photon_p,
                                             struct harm::FluidParams *fluid_params,
-                                            double *g_cov);
+                                            double *g_cov,
+                                            struct photon::InitPhoton *scattered,
+                                            unsigned int *n_scattered);
 
 /**
  * @brief Increment photon step counters and check against max step number.
@@ -563,18 +567,20 @@ void track_super_photons(double bias_norm,
     double *dev_step_size[n_streams];
 
     bool *dev_interact_cond[n_streams];
-    bool *scatter_cond[n_streams];
 
     bool *dev_scatter_cond[n_streams];
     double *dev_d_tau_scatt[n_streams];
     double *dev_d_tau_abs[n_streams];
     double *dev_bias[n_streams];
 
-    struct PhotonArray photon_p[n_streams];
+    struct photon::InitPhoton *scattered[n_streams];
+    unsigned int *n_scattered[n_streams];
 
     struct PhotonArray dev_photon_p[n_streams];
     struct harm::FluidParams *dev_fluid_params[n_streams];
     double *dev_g_cov[n_streams];
+    struct photon::InitPhoton *dev_scattered[n_streams];
+    unsigned int *dev_n_scattered[n_streams];
 
     gpuErrchk(cudaMemcpyToSymbol(dev_max_tau_scatt, &max_tau_scatt, sizeof(double)));
 
@@ -600,20 +606,9 @@ void track_super_photons(double bias_norm,
             photon_state[i][j] = PhotonState::Empty;
         }
 
-        gpuErrchk(cudaMallocHost((void **)&scatter_cond[i], n_photons * sizeof(bool)));
-
-        for (int j = 0; j < consts::n_dim; ++j) {
-            gpuErrchk(cudaMallocHost((void **)&photon_p[i].x[j], n_photons * sizeof(double)));
-            gpuErrchk(cudaMallocHost((void **)&photon_p[i].k[j], n_photons * sizeof(double)));
-        }
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].w, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].e, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].l, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].n_e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].b_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].theta_e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].e_0, n_photons * sizeof(double)));
-        gpuErrchk(cudaMallocHost((void **)&photon_p[i].n_scatt, n_photons * sizeof(int)));
+        gpuErrchk(cudaMallocHost((void **)&scattered[i], n_photons * sizeof(struct photon::InitPhoton)));
+        gpuErrchk(cudaMallocHost((void **)&n_scattered[i], sizeof(unsigned int)));
+        *n_scattered[i] = 0;
 
         /* TODO: optimize memory usage by allocating only the parts that are needed */
         alloc_photon_array(dev_photon[i], n_photons);
@@ -641,8 +636,11 @@ void track_super_photons(double bias_norm,
         alloc_photon_array(dev_photon_p[i], n_photons);
         gpuErrchk(cudaMalloc((void **)&dev_fluid_params[i], n_photons * sizeof(struct harm::FluidParams)));
         gpuErrchk(cudaMalloc((void **)&dev_g_cov[i], n_photons * consts::n_dim * consts::n_dim * sizeof(double)));
+        gpuErrchk(cudaMalloc((void **)&dev_scattered[i], n_photons * sizeof(struct photon::InitPhoton)));
+        gpuErrchk(cudaMalloc((void **)&dev_n_scattered[i], sizeof(unsigned int)));
 
         gpuErrchk(cudaMemset(dev_photon_state[i], 0, n_photons * sizeof(enum PhotonState)));
+        gpuErrchk(cudaMemset(dev_n_scattered[i], 0, sizeof(unsigned int)));
     }
 
     int *dev_pos_hist;
@@ -659,17 +657,13 @@ void track_super_photons(double bias_norm,
     bool all_done = false;
 
     cudaStream_t streams[n_streams];
-    cudaEvent_t scattered_photons_cpy_dtoh[n_streams];
-    cudaEvent_t scattered_photons_enq[n_streams];
+    cudaEvent_t scattered_photons_ready[n_streams];
     int stream_idx = 0;
 
     for (auto &stream : streams) {
         cudaStreamCreate(&stream);
     }
-    for (auto &event : scattered_photons_cpy_dtoh) {
-        cudaEventCreate(&event);
-    }
-    for (auto &event : scattered_photons_enq) {
+    for (auto &event : scattered_photons_ready) {
         cudaEventCreate(&event);
     }
 
@@ -890,6 +884,7 @@ void track_super_photons(double bias_norm,
                                                                            dev_bias[stream_idx]);
 
         /* scatter */
+        gpuErrchk(cudaMemsetAsync(dev_n_scattered[stream_idx], 0, sizeof(unsigned int), streams[stream_idx]));
         scatter_super_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
                                                                               dev_units,
                                                                               dev_photon[stream_idx],
@@ -897,70 +892,16 @@ void track_super_photons(double bias_norm,
                                                                               dev_scatter_cond[stream_idx],
                                                                               dev_photon_p[stream_idx],
                                                                               dev_fluid_params[stream_idx],
-                                                                              dev_g_cov[stream_idx]);
+                                                                              dev_g_cov[stream_idx],
+                                                                              dev_scattered[stream_idx],
+                                                                              dev_n_scattered[stream_idx]);
 
-        cudaEventSynchronize(scattered_photons_enq[stream_idx]);
-
-        for (int i = 0; i < consts::n_dim; ++i) {
-            gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].x[i],
-                                      dev_photon_p[stream_idx].x[i],
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyDeviceToHost,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].k[i],
-                                      dev_photon_p[stream_idx].k[i],
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyDeviceToHost,
-                                      streams[stream_idx]));
-        }
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].w,
-                                  dev_photon_p[stream_idx].w,
-                                  n_photons * sizeof(double),
+        gpuErrchk(cudaMemcpyAsync(n_scattered[stream_idx],
+                                  dev_n_scattered[stream_idx],
+                                  sizeof(unsigned int),
                                   cudaMemcpyDeviceToHost,
                                   streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].e,
-                                  dev_photon_p[stream_idx].e,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].l,
-                                  dev_photon_p[stream_idx].l,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].n_e_0,
-                                  dev_photon_p[stream_idx].n_e_0,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].b_0,
-                                  dev_photon_p[stream_idx].b_0,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].theta_e_0,
-                                  dev_photon_p[stream_idx].theta_e_0,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].e_0,
-                                  dev_photon_p[stream_idx].e_0,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-        gpuErrchk(cudaMemcpyAsync(photon_p[stream_idx].n_scatt,
-                                  dev_photon_p[stream_idx].n_scatt,
-                                  n_photons * sizeof(int),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-
-        gpuErrchk(cudaMemcpyAsync(scatter_cond[stream_idx],
-                                  dev_scatter_cond[stream_idx],
-                                  n_photons * sizeof(bool),
-                                  cudaMemcpyDeviceToHost,
-                                  streams[stream_idx]));
-
-        gpuErrchk(cudaEventRecord(scattered_photons_cpy_dtoh[stream_idx], streams[stream_idx]));
+        gpuErrchk(cudaEventRecord(scattered_photons_ready[stream_idx], streams[stream_idx]));
 
         /* increment and check step num */
         incr_check_n_step<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_n_step[stream_idx],
@@ -980,30 +921,18 @@ void track_super_photons(double bias_norm,
         }
 
         unsigned int prev_stream_idx = (stream_idx + n_streams - 1) % n_streams;
-        cudaEventSynchronize(scattered_photons_cpy_dtoh[prev_stream_idx]);
+        gpuErrchk(cudaEventSynchronize(scattered_photons_ready[prev_stream_idx]));
 
-        for (int i = 0; i < n_photons; ++i) {
-            if (scatter_cond[prev_stream_idx][i]) {
-                photon::InitPhoton p;
+        gpuErrchk(cudaMemcpyAsync(scattered[prev_stream_idx],
+                                  dev_scattered[prev_stream_idx],
+                                  *n_scattered[prev_stream_idx] * sizeof(struct photon::InitPhoton),
+                                  cudaMemcpyDeviceToHost,
+                                  streams[prev_stream_idx]));
+        gpuErrchk(cudaStreamSynchronize(streams[prev_stream_idx]));
 
-                for (int j = 0; j < consts::n_dim; ++j) {
-                    p.x[j] = photon_p[prev_stream_idx].x[j][i];
-                    p.k[j] = photon_p[prev_stream_idx].k[j][i];
-                }
-                p.w = photon_p[prev_stream_idx].w[i];
-                p.e = photon_p[prev_stream_idx].e[i];
-                p.l = photon_p[prev_stream_idx].l[i];
-                p.n_e_0 = photon_p[prev_stream_idx].n_e_0[i];
-                p.b_0 = photon_p[prev_stream_idx].b_0[i];
-                p.theta_e_0 = photon_p[prev_stream_idx].theta_e_0[i];
-                p.e_0 = photon_p[prev_stream_idx].e_0[i];
-                p.n_scatt = photon_p[prev_stream_idx].n_scatt[i];
-
-                photon_queue.force_enqueue(p);
-            }
+        for (unsigned int i = 0; i < *n_scattered[prev_stream_idx]; ++i) {
+            photon_queue.force_enqueue(scattered[prev_stream_idx][i]);
         }
-
-        gpuErrchk(cudaEventRecord(scattered_photons_enq[stream_idx], streams[stream_idx]));
 
         ++stream_idx;
         stream_idx %= n_streams;
@@ -1012,10 +941,7 @@ void track_super_photons(double bias_norm,
     for (auto &stream : streams) {
         cudaStreamDestroy(stream);
     }
-    for (auto &event : scattered_photons_cpy_dtoh) {
-        cudaEventDestroy(event);
-    }
-    for (auto &event : scattered_photons_enq) {
+    for (auto &event : scattered_photons_ready) {
         cudaEventDestroy(event);
     }
 
@@ -1057,28 +983,19 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaFree(dev_step_size[i]));
 
         gpuErrchk(cudaFree(dev_interact_cond[i]));
-        gpuErrchk(cudaFreeHost(scatter_cond[i]));
         gpuErrchk(cudaFree(dev_scatter_cond[i]));
         gpuErrchk(cudaFree(dev_d_tau_scatt[i]));
         gpuErrchk(cudaFree(dev_d_tau_abs[i]));
         gpuErrchk(cudaFree(dev_bias[i]));
 
-        for (int j = 0; j < consts::n_dim; ++j) {
-            gpuErrchk(cudaFreeHost(photon_p[i].x[j]));
-            gpuErrchk(cudaFreeHost(photon_p[i].k[j]));
-        }
-        gpuErrchk(cudaFreeHost(photon_p[i].w));
-        gpuErrchk(cudaFreeHost(photon_p[i].e));
-        gpuErrchk(cudaFreeHost(photon_p[i].l));
-        gpuErrchk(cudaFreeHost(photon_p[i].n_e_0));
-        gpuErrchk(cudaFreeHost(photon_p[i].b_0));
-        gpuErrchk(cudaFreeHost(photon_p[i].theta_e_0));
-        gpuErrchk(cudaFreeHost(photon_p[i].e_0));
-        gpuErrchk(cudaFreeHost(photon_p[i].n_scatt));
+        gpuErrchk(cudaFreeHost(scattered[i]));
+        gpuErrchk(cudaFreeHost(n_scattered[i]));
 
         free_photon_array(dev_photon_p[i]);
         gpuErrchk(cudaFree(dev_fluid_params[i]));
         gpuErrchk(cudaFree(dev_g_cov[i]));
+        gpuErrchk(cudaFree(dev_scattered[i]));
+        gpuErrchk(cudaFree(dev_n_scattered[i]));
     }
 
     if (record_trajectories) {
@@ -1564,7 +1481,9 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
                                             bool *scatter_cond,
                                             struct PhotonArray photon_p,
                                             struct harm::FluidParams *fluid_params,
-                                            double *g_cov) {
+                                            double *g_cov,
+                                            struct photon::InitPhoton *scattered,
+                                            unsigned int *n_scattered) {
     double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
@@ -1653,6 +1572,21 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
         photon_p.theta_e_0[tid] = photon.theta_e_0[tid];
         photon_p.e_0[tid] = photon.e_0[tid];
         photon_p.n_scatt[tid] = photon.n_scatt[tid] + 1;
+
+        const unsigned int scattered_idx = atomicAdd(n_scattered, 1U);
+#pragma unroll
+        for (int i = 0; i < consts::n_dim; ++i) {
+            scattered[scattered_idx].x[i] = photon_p.x[i][tid];
+            scattered[scattered_idx].k[i] = photon_p.k[i][tid];
+        }
+        scattered[scattered_idx].w = photon_p.w[tid];
+        scattered[scattered_idx].e = photon_p.e[tid];
+        scattered[scattered_idx].l = photon_p.l[tid];
+        scattered[scattered_idx].n_e_0 = photon_p.n_e_0[tid];
+        scattered[scattered_idx].theta_e_0 = photon_p.theta_e_0[tid];
+        scattered[scattered_idx].b_0 = photon_p.b_0[tid];
+        scattered[scattered_idx].e_0 = photon_p.e_0[tid];
+        scattered[scattered_idx].n_scatt = photon_p.n_scatt[tid];
     }
 }
 
