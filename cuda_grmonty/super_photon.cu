@@ -537,6 +537,7 @@ void track_super_photons(double bias_norm,
                          int *pos_hist) {
     const int grid_dim = consts::cuda::grid_dim;
     const int block_dim = consts::cuda::block_dim;
+    const int rng_grid_dim = (n_photons + block_dim - 1) / block_dim;
     const double x1_min = tracking_x1_min;
     const double x1_max = consts::x1_max;
 
@@ -668,7 +669,7 @@ void track_super_photons(double bias_norm,
     }
 
     for (int i = 0; i < n_streams; ++i) {
-        init_rng<<<grid_dim, block_dim, 0, streams[i]>>>(dev_rng_state[i]);
+        init_rng<<<rng_grid_dim, block_dim, 0, streams[i]>>>(dev_rng_state[i]);
     }
 
     gpuErrchk(cudaDeviceSynchronize());
@@ -1008,9 +1009,9 @@ void track_super_photons(double bias_norm,
 }
 
 static __global__ void init_rng(curandStatePhilox4_32_10_t *__restrict__ rng_state) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    curand_init(123, tid, 0, &rng_state[tid]);
+    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
+        curand_init(123, tid, 0, &rng_state[tid]);
+    }
 }
 
 static __global__ void load_validate_photon(struct PhotonArray photon,
