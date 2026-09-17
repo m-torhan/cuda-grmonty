@@ -42,6 +42,9 @@ bazel build -c opt //cuda_grmonty:main --config=cuda
 
 and run it the same as above.
 
+> [!NOTE]
+> To build for `sm_70` see [MODULE.bazel#L14-L26](MODULE.bazel#L14-L26).
+
 ## Spectrum plot
 
 To plot the spectrum, run `plot_spectrum.py`, preferably using [uv](https://github.com/astral-sh/uv) as follows:
@@ -80,15 +83,15 @@ Input parameters:
 
 System:
 
-- Arch Linux (6.18.6-arch1-1)
-- CUDA 13.1
-- clang 21.1.6
+- Arch Linux (7.2.6-arch2-1)
+- CUDA 13.4 / 12.9
+- clang 21.1.8 / 18.1.8
 
 Hardware:
 
 - CPU: i9-14900k
 - RAM: 2x32 GB (4800 Mhz)
-- GPU: RTX 3060 12 GB
+- GPU: RTX 3060 12 GB / Tesla V100 32 GB
 
 | Version                                                                | Other parameters / notes | Photon rate \[1/s\] | Total duration \[s\] |
 | ---------------------------------------------------------------------- | ------------------------ | ------------------- | -------------------- |
@@ -100,6 +103,8 @@ Hardware:
 | [v0.1.2](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.2) |                          | 246538              | 64.91                |
 | [v0.1.3](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.3) |                          | 307186              | 52.41                |
 | [v0.1.4](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.4) |                          | 352152              | 45.88                |
+| [v0.1.5](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.5) |                          | 491590              | 33.11                |
+| [v0.1.5](https://github.com/m-torhan/cuda-grmonty/releases/tag/v0.1.5) | Executed on V100         | 3915942             | 4.78                 |
 
 ## Development
 
