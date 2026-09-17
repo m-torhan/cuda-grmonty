@@ -166,24 +166,6 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
                                        double *bi);
 
 /**
- * @brief Apply stopping criterion to photons during propagation.
- *
- * Determines whether each photon should stop propagating based on optical depth, boundary conditions, or other
- * termination criteria.
- *
- * @param rng_state    Device array of random number generator states for stochastic checks.
- * @param x1_min       Radial coordinate at the event horizon.
- * @param x1_max       Maximum radial coordinate to track.
- * @param photon       Device array of photons to check.
- * @param photon_state Device array of photon states, updated if photon should stop.
- */
-static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ rng_state,
-                                      double x1_min,
-                                      double x1_max,
-                                      struct PhotonArray photon,
-                                      enum PhotonState *__restrict__ photon_state);
-
-/**
  * @brief Compute the propagation step size for each photon.
  *
  * Determines the distance each photon should move in this iteration based on local fluid properties, optical depths,
@@ -214,12 +196,18 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
  * Updates photon positions and optionally accumulates path lengths.
  *
  * @param header       Pointer to simulation header.
+ * @param rng_state    Device array of random number generator states.
+ * @param x1_min       Radial coordinate at the event horizon.
+ * @param x1_max       Maximum radial coordinate to track.
  * @param photon       Device array of photons to propagate.
  * @param photon_prev  Device array used to preserve the pre-step photon state.
  * @param photon_state Device array of photon states.
  * @param dl           Device array to store path length increments for each photon.
  */
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
+                                   curandStatePhilox4_32_10_t *__restrict__ rng_state,
+                                   double x1_min,
+                                   double x1_max,
                                    struct PhotonArray photon,
                                    struct PhotonArray photon_prev,
                                    enum PhotonState *__restrict__ photon_state,
@@ -763,17 +751,13 @@ void track_super_photons(double bias_norm,
 
         push_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
             dev_header,
+            dev_rng_state[stream_idx],
+            x1_min,
+            x1_max,
             dev_photon[stream_idx],
             dev_photon_2[stream_idx],
             dev_photon_state[stream_idx],
             dev_step_size[stream_idx]);
-
-        /* check stop criterion */
-        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
-                                                                       x1_min,
-                                                                       x1_max,
-                                                                       dev_photon[stream_idx],
-                                                                       dev_photon_state[stream_idx]);
 
         /* allow photon to interact with matter */
         interact_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_header,
@@ -1040,48 +1024,6 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
     }
 }
 
-static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ rng_state,
-                                      double x1_min,
-                                      double x1_max,
-                                      struct PhotonArray photon,
-                                      enum PhotonState *__restrict__ photon_state) {
-    for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
-        if (photon_state[tid] != PhotonState::Initialized) {
-            continue;
-        }
-
-        /* TODO: reduce branching */
-        if (photon.x[1][tid] < x1_min) {
-            /* stop at event horizon */
-            photon_state[tid] = PhotonState::Tracked;
-            continue;
-        }
-
-        if (photon.x[1][tid] > x1_max) {
-            /* stop at large distance */
-            if (photon.w[tid] < consts::weight_min) {
-                if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
-                    photon.w[tid] *= consts::roulette;
-                } else {
-                    photon.w[tid] = 0.0;
-                }
-            }
-            photon_state[tid] = PhotonState::Tracked;
-            continue;
-        }
-
-        if (photon.w[tid] < consts::weight_min) {
-            if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
-                photon.w[tid] *= consts::roulette;
-            } else {
-                photon.w[tid] = 0.0;
-                photon_state[tid] = PhotonState::Tracked;
-                continue;
-            }
-        }
-    }
-}
-
 static __global__ void step_size(const struct harm::Header *__restrict__ header,
                                  curandStatePhilox4_32_10_t *__restrict__ rng_state,
                                  double x1_min,
@@ -1166,6 +1108,9 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
 }
 
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
+                                   curandStatePhilox4_32_10_t *__restrict__ rng_state,
+                                   double x1_min,
+                                   double x1_max,
                                    struct PhotonArray photon,
                                    struct PhotonArray photon_prev,
                                    enum PhotonState *__restrict__ photon_state,
@@ -1199,6 +1144,32 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
             photon.dkdlam[i][tid] = p.dkdlam[i];
         }
         photon.e_0_s[tid] = p.e_0_s;
+
+        if (p.x[1] < x1_min) {
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
+
+        if (p.x[1] > x1_max) {
+            if (photon.w[tid] < consts::weight_min) {
+                if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                    photon.w[tid] *= consts::roulette;
+                } else {
+                    photon.w[tid] = 0.0;
+                }
+            }
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
+
+        if (photon.w[tid] < consts::weight_min) {
+            if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                photon.w[tid] *= consts::roulette;
+            } else {
+                photon.w[tid] = 0.0;
+                photon_state[tid] = PhotonState::Tracked;
+            }
+        }
     }
 }
 
