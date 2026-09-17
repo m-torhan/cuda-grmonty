@@ -1,8 +1,29 @@
+new_local_repository = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:local.bzl",
+    "new_local_repository",
+)
+
 # C++ bazel rules
 bazel_dep(name = "rules_cc", version = "0.2.16")
 
 # CUDA rules
 bazel_dep(name = "rules_cuda", version = "0.2.5")
+
+cuda = use_extension("@rules_cuda//cuda:extensions.bzl", "toolchain")
+
+# Might be required for sm_70 if your system CUDA is newer than 12.9
+# cuda.local_toolchain(
+#     name = "local_cuda",
+#     toolkit_path = "/opt/cuda-12.9",
+# )
+
+# use_repo(cuda, "local_cuda")
+
+# register_toolchains(
+#     "@local_cuda//toolchain:nvcc-local-toolchain",
+#     "@local_cuda//toolchain/clang:clang-local-toolchain",
+#     "@local_cuda//toolchain/disabled:disabled-local-toolchain",
+# )
 
 # Abseil
 bazel_dep(name = "abseil-cpp", version = "20260107.0")
@@ -15,6 +36,23 @@ bazel_dep(name = "googletest", version = "1.17.0")
 
 # Benchmark
 bazel_dep(name = "google_benchmark", version = "1.9.5")
+
+# OpenCV
+new_local_repository(
+    name = "opencv4_headers",
+    path = "/usr/include/opencv4",
+    build_file_content = """
+cc_library(
+    name = "headers",
+    hdrs = glob([
+        "**/*.h",
+        "**/*.hpp",
+    ]),
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
+""",
+)
 
 # Hedron's Compile Commands Extractor for Bazel
 # https://github.com/hedronvision/bazel-compile-commands-extractor

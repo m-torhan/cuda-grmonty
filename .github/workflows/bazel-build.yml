@@ -74,3 +74,7 @@ jobs:
     - name: Build
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" build //cuda_grmonty:main --config=cuda
+
+    - name: Build SM 70
+      run: |
+        "${GITHUB_WORKSPACE}/bin/bazel" build //cuda_grmonty:main --config=cuda_sm_70

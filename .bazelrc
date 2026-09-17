@@ -6,4 +6,16 @@ build --flag_alias=cuda_copts=@rules_cuda//cuda:copts
 build --flag_alias=cuda_runtime=@rules_cuda//cuda:runtime
 
 build --cxxopt=-std=c++20 --cxxopt=-O3
-build:cuda --define=CUDA=true --cuda_copts=-std=c++20 --cxxopt=-DCUDA=1 --cuda_copts=-arch=sm_86 --cuda_copts=--generate-line-info
+
+# Common CUDA configuration
+build:cuda_common --define=CUDA=true
+build:cuda_common --cuda_copts=-std=c++20
+build:cuda_common --cuda_copts=--generate-line-info
+build:cuda_common --cxxopt=-DCUDA=1
+
+# GPU architectures
+build:cuda       --config=cuda_common
+build:cuda       --cuda_copts=-arch=sm_86
+
+build:cuda_sm_70 --config=cuda_common
+build:cuda_sm_70 --cuda_copts=-arch=sm_70
