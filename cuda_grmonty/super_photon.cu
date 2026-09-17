@@ -190,11 +190,17 @@ static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ r
  * and geometry.
  *
  * @param header       Pointer to simulation header.
+ * @param rng_state    Device array of random number generator states.
+ * @param x1_min       Radial coordinate at the event horizon.
+ * @param x1_max       Maximum radial coordinate to track.
  * @param photon       Device array of photons to compute step sizes for.
  * @param photon_state Device array of photon states.
  * @param step_size    Device array to store computed step sizes.
  */
 static __global__ void step_size(const struct harm::Header *__restrict__ header,
+                                 curandStatePhilox4_32_10_t *__restrict__ rng_state,
+                                 double x1_min,
+                                 double x1_max,
                                  struct PhotonArray photon,
                                  enum PhotonState *__restrict__ photon_state,
                                  double *__restrict__ step_size);
@@ -747,19 +753,19 @@ void track_super_photons(double bias_norm,
         }
         ++n_iter;
 
-        stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
-                                                                       x1_min,
-                                                                       x1_max,
-                                                                       dev_photon[stream_idx],
-                                                                       dev_photon_state[stream_idx]);
+        step_size<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
+            dev_header,
+            dev_rng_state[stream_idx],
+            x1_min,
+            x1_max,
+            dev_photon[stream_idx],
+            dev_photon_state[stream_idx],
+            dev_step_size[stream_idx]);
 
         if (record_trajectories) {
             record_photon_position<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-                dev_photon[stream_idx], photon_state[stream_idx], dev_pos_hist);
+                dev_photon[stream_idx], dev_photon_state[stream_idx], dev_pos_hist);
         }
-
-        step_size<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx], dev_step_size[stream_idx]);
 
         push_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
             dev_header,
@@ -1086,12 +1092,42 @@ static __global__ void stop_criterion(curandStatePhilox4_32_10_t *__restrict__ r
 }
 
 static __global__ void step_size(const struct harm::Header *__restrict__ header,
+                                 curandStatePhilox4_32_10_t *__restrict__ rng_state,
+                                 double x1_min,
+                                 double x1_max,
                                  struct PhotonArray photon,
                                  enum PhotonState *__restrict__ photon_state,
                                  double *__restrict__ step_size) {
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         if (photon_state[tid] != PhotonState::Initialized) {
             continue;
+        }
+
+        if (photon.x[1][tid] < x1_min) {
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
+
+        if (photon.x[1][tid] > x1_max) {
+            if (photon.w[tid] < consts::weight_min) {
+                if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                    photon.w[tid] *= consts::roulette;
+                } else {
+                    photon.w[tid] = 0.0;
+                }
+            }
+            photon_state[tid] = PhotonState::Tracked;
+            continue;
+        }
+
+        if (photon.w[tid] < consts::weight_min) {
+            if (curand_uniform(&rng_state[tid]) <= 1.0 / consts::roulette) {
+                photon.w[tid] *= consts::roulette;
+            } else {
+                photon.w[tid] = 0.0;
+                photon_state[tid] = PhotonState::Tracked;
+                continue;
+            }
         }
 
         double dl_x_1 = consts::step_eps * photon.x[1][tid] / (fabs(photon.k[1][tid]) + consts::eps);
