@@ -260,7 +260,7 @@ cuda_library(
 cc_library(
     name = "opencv",
     hdrs = [],
-    includes = ["/usr/include/opencv4"],
+    includes = ["/usr/include/opencv5"],
     linkopts = [
         "-lopencv_core",
         "-lopencv_imgproc",
@@ -294,7 +294,7 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
-    copts = ["-I/usr/include/opencv4"],
+    copts = ["-I/usr/include/opencv5"],
 )
 
 cc_binary(

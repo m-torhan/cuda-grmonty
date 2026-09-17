@@ -37,23 +37,6 @@ bazel_dep(name = "googletest", version = "1.17.0")
 # Benchmark
 bazel_dep(name = "google_benchmark", version = "1.9.5")
 
-# OpenCV
-new_local_repository(
-    name = "opencv4_headers",
-    path = "/usr/include/opencv4",
-    build_file_content = """
-cc_library(
-    name = "headers",
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hpp",
-    ]),
-    includes = ["."],
-    visibility = ["//visibility:public"],
-)
-""",
-)
-
 # Hedron's Compile Commands Extractor for Bazel
 # https://github.com/hedronvision/bazel-compile-commands-extractor
 bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
