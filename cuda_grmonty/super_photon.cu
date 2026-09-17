@@ -191,11 +191,13 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
  *
  * @param header       Pointer to simulation header.
  * @param photon       Device array of photons to propagate.
+ * @param photon_prev  Device array used to preserve the pre-step photon state.
  * @param photon_state Device array of photon states.
  * @param dl           Device array to store path length increments for each photon.
  */
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
                                    struct PhotonArray photon,
+                                   struct PhotonArray photon_prev,
                                    enum PhotonState *__restrict__ photon_state,
                                    double *__restrict__ dl);
 
@@ -799,29 +801,6 @@ void track_super_photons(double bias_norm,
                                                                        dev_photon[stream_idx],
                                                                        dev_photon_state[stream_idx]);
 
-        for (int i = 0; i < consts::n_dim; ++i) {
-            gpuErrchk(cudaMemcpyAsync(dev_photon_2[stream_idx].x[i],
-                                      dev_photon[stream_idx].x[i],
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyDeviceToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_2[stream_idx].k[i],
-                                      dev_photon[stream_idx].k[i],
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyDeviceToDevice,
-                                      streams[stream_idx]));
-            gpuErrchk(cudaMemcpyAsync(dev_photon_2[stream_idx].dkdlam[i],
-                                      dev_photon[stream_idx].dkdlam[i],
-                                      n_photons * sizeof(double),
-                                      cudaMemcpyDeviceToDevice,
-                                      streams[stream_idx]));
-        }
-        gpuErrchk(cudaMemcpyAsync(dev_photon_2[stream_idx].e_0_s,
-                                  dev_photon[stream_idx].e_0_s,
-                                  n_photons * sizeof(double),
-                                  cudaMemcpyDeviceToDevice,
-                                  streams[stream_idx]));
-
         if (record_trajectories) {
             record_photon_position<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
                 dev_photon[stream_idx], photon_state[stream_idx], dev_pos_hist);
@@ -831,7 +810,11 @@ void track_super_photons(double bias_norm,
             dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx], dev_step_size[stream_idx]);
 
         push_photon<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(
-            dev_header, dev_photon[stream_idx], dev_photon_state[stream_idx], dev_step_size[stream_idx]);
+            dev_header,
+            dev_photon[stream_idx],
+            dev_photon_2[stream_idx],
+            dev_photon_state[stream_idx],
+            dev_step_size[stream_idx]);
 
         /* check stop criterion */
         stop_criterion<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_rng_state[stream_idx],
@@ -1209,6 +1192,7 @@ record_photon_position(struct PhotonArray photon, enum PhotonState *__restrict__
 
 static __global__ void push_photon(const struct harm::Header *__restrict__ header,
                                    struct PhotonArray photon,
+                                   struct PhotonArray photon_prev,
                                    enum PhotonState *__restrict__ photon_state,
                                    double *__restrict__ step_size) {
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
@@ -1222,6 +1206,14 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
             .dkdlam = {photon.dkdlam[0][tid], photon.dkdlam[1][tid], photon.dkdlam[2][tid], photon.dkdlam[3][tid]},
             .e_0_s = photon.e_0_s[tid],
         };
+
+#pragma unroll
+        for (int i = 0; i < consts::n_dim; ++i) {
+            photon_prev.x[i][tid] = p.x[i];
+            photon_prev.k[i][tid] = p.k[i];
+            photon_prev.dkdlam[i][tid] = p.dkdlam[i];
+        }
+        photon_prev.e_0_s[tid] = p.e_0_s;
 
         push_photon(header, &p, step_size[tid]);
 
