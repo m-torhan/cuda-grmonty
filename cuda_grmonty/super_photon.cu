@@ -340,6 +340,7 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
  * @param g_cov        Metric connection coefficients for Lorentz transformations.
  * @param scattered    Compact output array containing only successfully scattered photons.
  * @param n_scattered  Number of entries written to the compact output array.
+ * @param n_step       Device array of photon step counters.
  */
 static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restrict__ rng_state,
                                             const struct harm::Units *__restrict__ units,
@@ -350,15 +351,8 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
                                             struct harm::FluidParams *fluid_params,
                                             double *g_cov,
                                             struct photon::InitPhoton *scattered,
-                                            unsigned int *n_scattered);
-
-/**
- * @brief Increment photon step counters and check against max step number.
- *
- * @param n_step       Device array of photon step counters.
- * @param photon_state Device array of photon states, updated if stopping conditions met.
- */
-static __global__ void incr_check_n_step(int *n_step, enum PhotonState *__restrict__ photon_state);
+                                            unsigned int *n_scattered,
+                                            int *n_step);
 
 /**
  * @brief Record photons into the spectrum accumulator.
@@ -836,7 +830,8 @@ void track_super_photons(double bias_norm,
                                                                               dev_fluid_params[stream_idx],
                                                                               dev_g_cov[stream_idx],
                                                                               dev_scattered[stream_idx],
-                                                                              dev_n_scattered[stream_idx]);
+                                                                              dev_n_scattered[stream_idx],
+                                                                              dev_n_step[stream_idx]);
 
         gpuErrchk(cudaMemcpyAsync(n_scattered[stream_idx],
                                   dev_n_scattered[stream_idx],
@@ -844,10 +839,6 @@ void track_super_photons(double bias_norm,
                                   cudaMemcpyDeviceToHost,
                                   streams[stream_idx]));
         gpuErrchk(cudaEventRecord(scattered_photons_ready[stream_idx], streams[stream_idx]));
-
-        /* increment and check step num */
-        incr_check_n_step<<<grid_dim, block_dim, 0, streams[stream_idx]>>>(dev_n_step[stream_idx],
-                                                                           dev_photon_state[stream_idx]);
 
         if (n_iter % 7 == 0) {
             /* record photons */
@@ -1460,7 +1451,8 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
                                             struct harm::FluidParams *fluid_params,
                                             double *g_cov,
                                             struct photon::InitPhoton *scattered,
-                                            unsigned int *n_scattered) {
+                                            unsigned int *n_scattered,
+                                            int *n_step) {
     double g_cov_[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
@@ -1565,9 +1557,7 @@ static __global__ void scatter_super_photon(curandStatePhilox4_32_10_t *__restri
         scattered[scattered_idx].e_0 = photon_p.e_0[tid];
         scattered[scattered_idx].n_scatt = photon_p.n_scatt[tid];
     }
-}
 
-static __global__ void incr_check_n_step(int *n_step, enum PhotonState *__restrict__ photon_state) {
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
         if (photon_state[tid] != PhotonState::Initialized) {
             continue;
