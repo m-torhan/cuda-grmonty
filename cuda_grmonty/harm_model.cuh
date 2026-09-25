@@ -255,11 +255,10 @@ static __device__ harm::FluidParams get_fluid_params(const harm::Header *header,
                                                      const double *__restrict__ b_3,
                                                      const double (&x)[consts::n_dim],
                                                      const double (&g_cov)[consts::n_dim][consts::n_dim]) {
-    struct harm::FluidParams fluid_params;
+    struct harm::FluidParams fluid_params{};
 
-    if (x[1] < header->x_start[1] || x[1] > header->x_stop[1] || x[2] < header->x_start[2] ||
-        x[2] > header->x_stop[2]) {
-        fluid_params.n_e = 0.0;
+    if (!isfinite(x[1]) || !isfinite(x[2]) || x[1] < header->x_start[1] || x[1] > header->x_stop[1] ||
+        x[2] < header->x_start[2] || x[2] > header->x_stop[2]) {
         return fluid_params;
     }
 

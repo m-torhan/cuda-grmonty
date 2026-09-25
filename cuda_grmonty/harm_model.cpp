@@ -621,11 +621,10 @@ struct FluidZone HARMModel::get_fluid_zone(int x_1, int x_2) const {
 
 struct FluidParams HARMModel::get_fluid_params(const double (&x)[consts::n_dim],
                                                const ndarray::NDArray<double, 2> &g_cov) const {
-    struct FluidParams fluid_params;
+    struct FluidParams fluid_params{};
 
-    if (x[1] < header_.x_start[1] || x[1] > header_.x_stop[1] || x[2] < header_.x_start[2] ||
-        x[2] > header_.x_stop[2]) {
-        fluid_params.n_e = 0.0;
+    if (!std::isfinite(x[1]) || !std::isfinite(x[2]) || x[1] < header_.x_start[1] || x[1] > header_.x_stop[1] ||
+        x[2] < header_.x_start[2] || x[2] > header_.x_stop[2]) {
         return fluid_params;
     }
 
