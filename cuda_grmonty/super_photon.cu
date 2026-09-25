@@ -1135,7 +1135,7 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
             .e_0_s = photon.e_0_s[tid],
         };
 
-        double photon_step = step_size[tid];
+        double photon_step;
         if constexpr (calculate_step) {
             if (p.x[1] < x1_min) {
                 photon_state[tid] = PhotonState::Tracked;
@@ -1175,6 +1175,8 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
 
             photon_step = 1.0 / (i_dl_x_1 + i_dl_x_2 + i_dl_x_3);
             step_size[tid] = photon_step;
+        } else {
+            photon_step = step_size[tid];
         }
 
 #pragma unroll
