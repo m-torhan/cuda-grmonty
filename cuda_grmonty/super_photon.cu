@@ -639,6 +639,7 @@ void track_super_photons(double bias_norm,
         gpuErrchk(cudaMalloc((void **)&dev_n_scattered[i], sizeof(unsigned int)));
 
         gpuErrchk(cudaMemset(dev_photon_state[i], 0, n_photons * sizeof(enum PhotonState)));
+        gpuErrchk(cudaMemset(dev_scattered[i], 0, n_photons * sizeof(struct photon::InitPhoton)));
         gpuErrchk(cudaMemset(dev_n_scattered[i], 0, sizeof(unsigned int)));
     }
 
