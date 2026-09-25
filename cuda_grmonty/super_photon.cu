@@ -1877,6 +1877,7 @@ push_photon(const struct harm::Header *__restrict__ header, struct photon::Photo
 
     double current_dl = dl;
     int depth = 0;
+    unsigned int pending_depths = 0;
 
     double x_cpy[consts::n_dim];
     double k_cpy[consts::n_dim];
@@ -1899,11 +1900,21 @@ push_photon(const struct harm::Header *__restrict__ header, struct photon::Photo
                 photon->k[i] = k_cpy[i];
                 photon->dkdlam[i] = dk_cpy[i];
             }
+
+            /* Process the first half now and retain the second half for depth-first traversal. */
             current_dl *= 0.5;
             ++depth;
+            pending_depths = (pending_depths << 3) | static_cast<unsigned int>(depth);
         } else {
             photon->e_0_s = e_1;
-            break;
+
+            if (pending_depths == 0) {
+                break;
+            }
+
+            depth = static_cast<int>(pending_depths & 0x7U);
+            pending_depths >>= 3;
+            current_dl = ldexp(dl, -depth);
         }
     }
 }
