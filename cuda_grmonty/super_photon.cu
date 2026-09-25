@@ -1011,14 +1011,29 @@ static __global__ void setup_variables(const struct harm::Header *__restrict__ h
 
         fluid_n_e[tid] = fluid_params.n_e;
 
-        sin_theta[tid] = cuda_radiation::bk_sin_angle(
-            photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
-        nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
-        alpha_scatti[tid] =
-            cuda_radiation::alpha_inv_scatt(nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
-        alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-            nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta[tid], tables.k2);
-        bi[tid] = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
+        if (fluid_params.n_e > 0.0) {
+            sin_theta[tid] = cuda_radiation::bk_sin_angle(
+                photon_x, photon_k, fluid_params.u_cov, fluid_params.b_cov, fluid_params.b, units->b_unit);
+            nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
+
+            if (isfinite(nu[tid]) && nu[tid] >= 0.0) {
+                alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
+                    nu[tid], fluid_params.theta_e, fluid_params.n_e, tables.hotcross_table);
+                alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
+                    nu[tid], fluid_params.theta_e, fluid_params.n_e, fluid_params.b, sin_theta[tid], tables.k2);
+                bi[tid] = bias_func(bias_norm, fluid_params.theta_e, photon.w[tid]);
+            } else {
+                alpha_scatti[tid] = 0.0;
+                alpha_absi[tid] = 0.0;
+                bi[tid] = 0.0;
+            }
+        } else {
+            sin_theta[tid] = 0.0;
+            nu[tid] = 0.0;
+            alpha_scatti[tid] = 0.0;
+            alpha_absi[tid] = 0.0;
+            bi[tid] = 0.0;
+        }
 
         double photon_dkdlam[consts::n_dim];
         init_dkdlam(header, photon_x, photon_k, photon_dkdlam);
@@ -1286,7 +1301,7 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
             nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params.u_cov);
         }
 
-        if (bound_flag || (nu[tid] < 0.0)) {
+        if (bound_flag || !isfinite(nu[tid]) || nu[tid] < 0.0) {
             d_tau_scatt[tid] = 0.5 * alpha_scatti[tid] * d_tau_k * step_size[tid];
             d_tau_abs[tid] = 0.5 * alpha_absi[tid] * d_tau_k * step_size[tid];
             alpha_scatti[tid] = 0.0;
@@ -1430,22 +1445,29 @@ static __global__ void interact_photon_2(curandStatePhilox4_32_10_t *__restrict_
                     }
                 }
                 fluid_params[tid] = fluid_params_;
-            }
 
-            sin_theta[tid] = cuda_radiation::bk_sin_angle(
-                photon_x, photon_k, fluid_params_.u_cov, fluid_params_.b_cov, fluid_params_.b, units->b_unit);
-            nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params_.u_cov);
+                sin_theta[tid] = cuda_radiation::bk_sin_angle(
+                    photon_x, photon_k, fluid_params_.u_cov, fluid_params_.b_cov, fluid_params_.b, units->b_unit);
+                nu[tid] = cuda_radiation::fluid_nu(photon_x, photon_k, fluid_params_.u_cov);
 
-            if (nu[tid] < 0.0) {
+                if (isfinite(nu[tid]) && nu[tid] >= 0.0) {
+                    alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
+                        nu[tid], fluid_params_.theta_e, fluid_params_.n_e, tables.hotcross_table);
+                    alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
+                        nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, sin_theta[tid], tables.k2);
+                    bi[tid] = bias_func(bias_norm, fluid_params_.theta_e, photon.w[tid]);
+                } else {
+                    alpha_scatti[tid] = 0.0;
+                    alpha_absi[tid] = 0.0;
+                    bi[tid] = 0.0;
+                }
+            } else {
+                sin_theta[tid] = 0.0;
+                nu[tid] = 0.0;
                 alpha_scatti[tid] = 0.0;
                 alpha_absi[tid] = 0.0;
-            } else {
-                alpha_scatti[tid] = cuda_radiation::alpha_inv_scatt(
-                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, tables.hotcross_table);
-                alpha_absi[tid] = cuda_radiation::alpha_inv_abs(
-                    nu[tid], fluid_params_.theta_e, fluid_params_.n_e, fluid_params_.b, sin_theta[tid], tables.k2);
+                bi[tid] = 0.0;
             }
-            bi[tid] = bias_func(bias_norm, fluid_params_.theta_e, photon.w[tid]);
 
         } else {
             if (d_tau_abs[tid] > 100) {
