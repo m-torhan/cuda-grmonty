@@ -1251,9 +1251,6 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
     double g_cov[consts::cuda::block_dim][consts::n_dim][consts::n_dim];
 
     for (int tid = threadIdx.x + blockIdx.x * blockDim.x; tid < n_photons; tid += blockDim.x * gridDim.x) {
-        const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
-        const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
-
         if (photon_state[tid] != PhotonState::Initialized) {
             continue;
         }
@@ -1263,6 +1260,9 @@ static __global__ void interact_photon(const struct harm::Header *__restrict__ h
         if (!interact_cond[tid]) {
             continue;
         }
+
+        const double photon_x[consts::n_dim] = {photon.x[0][tid], photon.x[1][tid], photon.x[2][tid], photon.x[3][tid]};
+        const double photon_k[consts::n_dim] = {photon.k[0][tid], photon.k[1][tid], photon.k[2][tid], photon.k[3][tid]};
 
         cuda_harm::gcov_func(header, photon_x, g_cov[threadIdx.x]);
 
