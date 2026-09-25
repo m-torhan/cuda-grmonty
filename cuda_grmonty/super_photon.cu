@@ -1152,6 +1152,16 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
             .e_0_s = photon.e_0_s[tid],
         };
 
+        bool valid = isfinite(photon.w[tid]) && isfinite(photon.e[tid]) && isfinite(p.e_0_s);
+#pragma unroll
+        for (int i = 0; i < consts::n_dim; ++i) {
+            valid = valid && isfinite(p.x[i]) && isfinite(p.k[i]) && isfinite(p.dkdlam[i]);
+        }
+        if (!valid) {
+            photon_state[tid] = PhotonState::Empty;
+            continue;
+        }
+
         double photon_step;
         if constexpr (calculate_step) {
             if (p.x[1] < x1_min) {
@@ -1205,6 +1215,16 @@ static __global__ void push_photon(const struct harm::Header *__restrict__ heade
         photon_prev.e_0_s[tid] = p.e_0_s;
 
         push_photon(header, &p, photon_step);
+
+        valid = isfinite(p.e_0_s);
+#pragma unroll
+        for (int i = 0; i < consts::n_dim; ++i) {
+            valid = valid && isfinite(p.x[i]) && isfinite(p.k[i]) && isfinite(p.dkdlam[i]);
+        }
+        if (!valid) {
+            photon_state[tid] = PhotonState::Empty;
+            continue;
+        }
 
 #pragma unroll
         for (int i = 0; i < consts::n_dim; ++i) {
