@@ -654,7 +654,7 @@ void track_super_photons(double bias_norm,
 
     int n_iter = 0;
     bool queue_empty = false;
-    bool all_done = false;
+    bool stream_done[n_streams] = {};
 
     cudaStream_t streams[n_streams];
     cudaEvent_t scattered_photons_ready[n_streams];
@@ -681,10 +681,10 @@ void track_super_photons(double bias_norm,
         }
 
         /* feed photons into array */
-        all_done = true;
         if (n_iter % 7 == 0) {
             photon_queue.dequeue_n(buffer, consts::cuda::n_photons - buffer.size());
             unsigned int n_pending = 0;
+            bool all_done = true;
 
             for (int i = 0; i < n_photons; ++i) {
                 if (photon_state[stream_idx][i] == PhotonState::Empty && !buffer.empty()) {
@@ -698,8 +698,9 @@ void track_super_photons(double bias_norm,
                     all_done = false;
                 }
             }
+            stream_done[stream_idx] = all_done;
 
-            if (queue_empty && all_done) {
+            if (queue_empty && stream_done[0] && stream_done[1]) {
                 break;
             }
 
